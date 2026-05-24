@@ -22,7 +22,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     const currentUserAccount = extractAccountFromEmail(currentUserEmail);
     const isAdmin = currentUserAccount === ADMIN_ACCOUNT || currentUserEmail === ADMIN_ACCOUNT;
 
-    // ★ 管理員手動控制的填寫權限狀態
     const [isSubmissionOpen, setIsSubmissionOpen] = useState(false);
 
     const [quarterOptions, setQuarterOptions] = useState(['BASE', ...generateBaseQuarters()]);
@@ -76,7 +75,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             setMemberPositions(mpData || []);
             setQuarterSettings(qsData || []);
 
-            // 處理系統假期與管理員權限設定
             const todayStr = new Date().toISOString().split('T')[0];
             let parsedHolidays = {};
             let needsUpdate = false;
@@ -123,7 +121,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
 
     const showMessage = (type, text) => { setMessage({ type, text }); setTimeout(() => setMessage({ type: '', text: '' }), 4000); };
 
-    // ★ 手動切換填寫權限 (管理員專用)
     const toggleSubmissionStatus = async () => {
         if (!isAdmin) return;
         setIsLoading(true);
@@ -282,7 +279,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             const holidaysArr = Object.entries(updatedHolidays).map(([d, n]) => `${d}|${n}`);
             const sysMem = members.find(m => m.name === 'SYSTEM_CUSTOM_HOLIDAYS_DB');
             
-            const systemStatus = isSubmissionOpen ? 'OPEN' : 'CLOSED'; // 保留當前狀態
+            const systemStatus = isSubmissionOpen ? 'OPEN' : 'CLOSED';
             
             if (sysMem) {
                 const { error } = await supabase.from('member_quarter_settings').upsert({ member_id: sysMem.id, quarter: 'SYSTEM', unavailable_dates: holidaysArr, availability_status: systemStatus }, { onConflict: 'member_id, quarter' });
@@ -305,7 +302,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             const holidaysArr = Object.entries(updatedHolidays).map(([d, n]) => `${d}|${n}`);
             const sysMem = members.find(m => m.name === 'SYSTEM_CUSTOM_HOLIDAYS_DB');
             if (sysMem) {
-                const systemStatus = isSubmissionOpen ? 'OPEN' : 'CLOSED'; // 保留當前狀態
+                const systemStatus = isSubmissionOpen ? 'OPEN' : 'CLOSED';
                 const { error } = await supabase.from('member_quarter_settings').upsert({ member_id: sysMem.id, quarter: 'SYSTEM', unavailable_dates: holidaysArr, availability_status: systemStatus }, { onConflict: 'member_id, quarter' });
                 if (error) throw error;
             }
@@ -313,7 +310,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
         } catch (error) { showMessage('error', '刪除失敗: ' + error.message); } finally { setIsLoading(false); }
     };
 
-    // ★ 空值防護確保編輯畫面 100% 能開啟
     const openEditModal = (member) => {
         const settings = quarterSettings.find(s => s.member_id === member.id) || {};
         let safeDates = [];
@@ -332,7 +328,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             group_id: member.group_id ?? '',
             preferred_session: settings.preferred_session ?? '第一堂',
             availability_status: settings.availability_status ?? '穩定服事', 
-            dual_service_pref: settings.dual_service_pref ?? 0,
+            dual_service_pref: settings.dual_service_pref ?? '',
             unavailable_dates: safeDates, 
             newcomer_rule: settings.newcomer_rule ?? ''
         });
@@ -356,7 +352,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     };
 
     const handleSave = async () => {
-        // ★ 如果非管理員，且尚未開放填寫，禁止儲存
         if (!isAdmin && !isSubmissionOpen) {
             return showMessage('error', '非開放填寫期間無法儲存變更！');
         }
@@ -368,6 +363,8 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             const cleanedGroupId = (formData.group_id || '').trim().toUpperCase();
             const finalGroupId = cleanedGroupId === '' ? null : cleanedGroupId;
             const parsedNewcomerRule = formData.newcomer_rule === '' ? null : parseInt(formData.newcomer_rule);
+            
+            const finalDualPref = formData.dual_service_pref === '' ? null : parseInt(formData.dual_service_pref);
 
             const memberPayload = { name: formData.name.trim() };
             if (isAdmin) { memberPayload.group_id = finalGroupId; memberPayload.email = formData.email ? formData.email.trim() : null; }
@@ -381,7 +378,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
 
             await supabase.from('member_quarter_settings').upsert({
                 member_id: memberId, quarter: viewQuarter, preferred_session: formData.preferred_session,
-                availability_status: formData.availability_status, dual_service_pref: parseInt(formData.dual_service_pref),
+                availability_status: formData.availability_status, dual_service_pref: finalDualPref,
                 newcomer_rule: parsedNewcomerRule, unavailable_dates: formData.unavailable_dates
             }, { onConflict: 'member_id, quarter' });
 
@@ -416,31 +413,45 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
 
     let displayMembers = members.filter(m => {
         if (m.name === 'SYSTEM_CUSTOM_HOLIDAYS_DB' || m.name === 'SYSTEM_SCHEDULE_ARCHIVE') return false;
-        
-        // 一般同工的專屬過濾：只能看到自己的資料
         if (!isAdmin) {
             const memberEmail = m.email ? m.email.trim() : '';
-            if (memberEmail !== currentUserAccount && memberEmail !== currentUserEmail) {
-                return false;
-            }
+            if (memberEmail !== currentUserAccount && memberEmail !== currentUserEmail) return false;
         }
-
         const term = searchTerm.toLowerCase();
+        
+        // 1. 搜尋姓名與群組
         if (m.name.toLowerCase().includes(term)) return true;
         if (m.group_id && m.group_id.toLowerCase().includes(term)) return true;
+        
+        // 2. 搜尋服事崗位
         const hasMatchingPosition = memberPositions.filter(mp => mp.member_id === m.id).some(mp => {
             const p = positions.find(pos => pos.id === mp.position_id);
             return p && p.name.toLowerCase().includes(term);
         });
         if (hasMatchingPosition) return true;
-        const settings = quarterSettings.find(s => s.member_id === m.id);
-        if (settings && settings.preferred_session && settings.preferred_session.toLowerCase().includes(term)) return true;
-        if (settings && settings.availability_status && settings.availability_status.toLowerCase().includes(term)) return true;
         
+        // 3. 搜尋狀態、堂別與兼任設定
+        const settings = quarterSettings.find(s => s.member_id === m.id);
+        if (settings) {
+            if (settings.preferred_session && settings.preferred_session.toLowerCase().includes(term)) return true;
+            if (settings.availability_status && settings.availability_status.toLowerCase().includes(term)) return true;
+            
+            // --- 新增：崗位兼任狀態搜尋 ---
+            let dualPrefText = '預設兼任 開啟兼任'; 
+            if (settings.dual_service_pref === 0) dualPrefText = '關閉兼任';
+            if (settings.dual_service_pref === 1) dualPrefText = '二堂同崗';
+            if (settings.dual_service_pref === 2) dualPrefText = '二堂異崗';
+            
+            if (dualPrefText.includes(term)) return true;
+            // -----------------------------
+        }
+        
+        // 4. 搜尋暫停狀態
         if (term.includes('暫停')) {
             const hasSuspendedPosition = memberPositions.filter(mp => mp.member_id === m.id).some(mp => mp.is_active === false);
             if (hasSuspendedPosition) return true;
         }
+        
         return false;
     });
 
@@ -456,9 +467,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     });
 
     return (
-        // ★ 加入 h-[100dvh] 以完美適應手機動態視窗，移除 select-none 避免干擾滑動
         <div className="flex h-[100dvh] w-full bg-slate-50 overflow-hidden relative">
-            {/* 左側整合式現代功能導覽列：一般同工登入時自動隱藏 */}
             {isAdmin && (
                 <div className="w-64 bg-slate-900 flex flex-col justify-between shrink-0 border-r border-slate-800 z-30">
                     <div className="flex flex-col">
@@ -482,7 +491,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                         </nav>
                     </div>
                     
-                    {/* 底部安全登出按鈕 */}
                     <div className="p-4 border-t border-slate-800">
                         <button 
                             onClick={async () => { 
@@ -498,18 +506,12 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                 </div>
             )}
 
-            {/* 右側主工作視窗容器 */}
             <div className="flex-1 flex flex-col relative bg-slate-50 overflow-hidden animate-fade-in">
                 <div className="bg-white px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0 shadow-sm z-20">
                     <div className="flex items-center gap-3 w-full md:w-auto">
-                        <button 
-                            onClick={goBack} 
-                            className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-colors" 
-                            title={isAdmin ? "返回首頁" : "登出系統"}
-                        >
+                        <button onClick={goBack} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-colors" title={isAdmin ? "返回首頁" : "登出系統"}>
                             {isAdmin ? <ChevronLeft size={24} /> : <LogOut size={22} className="ml-0.5" />}
                         </button>
-                        
                         <h2 className="text-2xl font-extrabold text-slate-900 flex items-center gap-3 tracking-tight">
                             <Users className="text-indigo-600" size={28}/> 同工資料中心
                         </h2>
@@ -574,8 +576,10 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                             <div>
                                                 <h3 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2 flex-wrap leading-tight">
                                                     {member.name}
+                                                    {isAdmin && settings.dual_service_pref === 0 && <span className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded border border-red-100 font-normal">關閉兼任</span>}
                                                     {isAdmin && settings.dual_service_pref === 1 && <span className="text-[10px] bg-violet-50 text-violet-600 px-2 py-0.5 rounded border border-violet-100 font-normal">二堂同崗</span>}
                                                     {isAdmin && settings.dual_service_pref === 2 && <span className="text-[10px] bg-violet-50 text-violet-600 px-2 py-0.5 rounded border border-violet-100 font-normal">二堂異崗</span>}
+                                                    
                                                     {isAdmin && member.group_id && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded border border-indigo-100 font-normal">{member.group_id}</span>}
                                                 </h3>
                                                 <div className="flex items-center flex-wrap gap-1.5 text-xs font-normal mt-2">
@@ -639,7 +643,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                 )}
 
                 {isModalOpen && (
-                    /* ★ 改為 p-4 置中浮動設計，視窗四周都會有安全距離，絕對不會被底部導覽列遮住 */
                     <div className="fixed inset-0 z-[100] flex flex-col justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
                         <div className="bg-white w-full mx-auto max-w-2xl max-h-[85dvh] rounded-2xl shadow-hover-soft overflow-hidden flex flex-col animate-fade-in border border-slate-100">
                             <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0 sticky top-0 z-10">
@@ -650,12 +653,10 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                 <button onClick={closeModal} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"><X size={20}/></button>
                             </div>
                             
-                            {/* ★ 加入 touch-pan-y 與 overscroll-contain 確保滑動順暢 */}
                             <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6 touch-pan-y overscroll-contain">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-medium text-slate-500 uppercase">姓名 <span className="text-red-500">*</span></label>
-                                        {/* ★ 移除 disabled 改用 readOnly，讓手指碰到這裡也能往下滑 */}
                                         <input 
                                             type="text" 
                                             value={formData.name ?? ''} 
@@ -684,9 +685,12 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                                 <input type="text" value={formData.group_id ?? ''} onChange={e => setFormData({...formData, group_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 uppercase transition-all" placeholder="例如：FA" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-slate-500 uppercase">同日二堂服事 <span className="text-slate-400 font-normal">(選填)</span></label>
-                                                <select value={formData.dual_service_pref ?? 0} onChange={e => setFormData({...formData, dual_service_pref: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all">
-                                                    <option value="0">無</option><option value="1">二堂同崗</option><option value="2">二堂異崗</option>
+                                                <label className="text-xs font-medium text-slate-500 uppercase">崗位兼任 <span className="text-slate-400 font-normal">(選填)</span></label>
+                                                <select value={formData.dual_service_pref ?? ''} onChange={e => setFormData({...formData, dual_service_pref: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all">
+                                                    <option value="">預設 (開啟兼任)</option>
+                                                    <option value="0">關閉兼任</option>
+                                                    <option value="1">二堂同崗</option>
+                                                    <option value="2">二堂異崗</option>
                                                 </select>
                                             </div>
                                             <div className="space-y-1.5">
@@ -753,7 +757,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                 )}
                             </div>
                             
-                            {/* ★ 移除額外的 padding-bottom (pb-8)，因為視窗已經不是貼齊底部了 */}
                             <div className="px-5 py-4 border-t border-slate-100 bg-white flex gap-3 shrink-0 sticky bottom-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                                 <button onClick={closeModal} className="flex-1 py-3 sm:py-2.5 rounded-lg font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">取消</button>
                                 <button onClick={handleSave} disabled={isLoading} className="flex-[2] py-3 sm:py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95 text-white rounded-lg font-medium flex items-center justify-center gap-2 shadow-button transition-all duration-200 hover:-translate-y-0.5 active:scale-95 disabled:opacity-50">
