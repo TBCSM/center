@@ -92,7 +92,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
 
     const effectiveMembers = useMemo(() => {
         return dbData.members
-            // 透過 startsWith 一次性排除所有系統保留帳號
             .filter(m => m.name && !m.name.startsWith('SYSTEM_'))
             .map(m => {
                 const qs = dbData.memberQuarterSettings.find(s => s.member_id === m.id && s.quarter === currentQuarterStr);
@@ -290,10 +289,10 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         setActiveSlot(null); setSearchTerm('');
     };
 
+    // 修改 1：修正替補確認視窗的職位字串（如果是執事輪值，隱藏堂別）
     const requestSubstitute = (newMember) => {
-        const sessionText = activeSlot._positionName === '執事輪值' ? '第一堂、第二堂' : activeSlot.session;
         const cDate = activeSlot.service_date.replace(/-/g,'/');
-        const cRole = `${sessionText}‧${activeSlot._positionName}`;
+        const cRole = activeSlot._positionName === '執事輪值' ? activeSlot._positionName : `${activeSlot.session}‧${activeSlot._positionName}`;
         setConfirmDialog({
             isOpen: true, title: '執行替補', currentName: activeSlot._memberName, currentDate: cDate, currentRole: cRole,
             newName: newMember.name, newDate: cDate, newRole: cRole, type: 'substitute',
@@ -301,13 +300,14 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         });
     };
 
+    // 修改 2：修正換班確認視窗的職位字串（如果是執事輪值，隱藏堂別）
     const requestSwap = (newMember, targetShift) => {
-        const sessionText = activeSlot._positionName === '執事輪值' ? '第一堂、第二堂' : activeSlot.session;
         const cDate = activeSlot.service_date.replace(/-/g,'/');
-        const cRole = `${sessionText}‧${activeSlot._positionName}`;
-        const targetSessionText = targetShift._positionName === '執事輪值' ? '第一堂、第二堂' : targetShift.session;
+        const cRole = activeSlot._positionName === '執事輪值' ? activeSlot._positionName : `${activeSlot.session}‧${activeSlot._positionName}`;
+        
         const nDate = targetShift.service_date.replace(/-/g,'/');
-        const nRole = `${targetSessionText}‧${targetShift._positionName}`;
+        const nRole = targetShift._positionName === '執事輪值' ? targetShift._positionName : `${targetShift.session}‧${targetShift._positionName}`;
+        
         setConfirmDialog({
             isOpen: true, title: '執行換班', currentName: activeSlot._memberName, currentDate: cDate, currentRole: cRole,
             newName: newMember.name, newDate: nDate, newRole: nRole, type: 'swap',
@@ -695,7 +695,13 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                         <div className="flex flex-col gap-1.5">
                             <p className="text-xl font-bold text-white">{activeSlot.service_date}</p>
                             <div className="flex items-center gap-2 flex-wrap"><span className={`px-3 py-1 rounded-lg text-lg font-semibold tracking-wide ${activeSlot.is_empty ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_15px_rgba(244,63,94,0.5)]' : 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white'}`}>{activeSlot._memberName}</span></div>
-                            <div className="flex items-center gap-1.5 text-xs font-normal text-slate-400 flex-wrap mt-1"><span className="bg-white/10 px-1.5 py-0.5 rounded text-slate-300">{activeSlot._positionName}</span><span>•</span><span>{activeSlot._positionName === '執事輪值' ? '第一堂、第二堂' : activeSlot.session}</span>{!activeSlot.is_empty && (<><span>•</span><span>本季服事 {currentUsageCount[activeSlot.member_id] || 0} 次</span></>)}</div>
+                            
+                            {/* 修改 3：面版上方 Header 資訊，執事輪值不顯示堂別 */}
+                            <div className="flex items-center gap-1.5 text-xs font-normal text-slate-400 flex-wrap mt-1">
+                                <span className="bg-white/10 px-1.5 py-0.5 rounded text-slate-300">{activeSlot._positionName}</span>
+                                {activeSlot._positionName !== '執事輪值' && <><span>•</span><span>{activeSlot.session}</span></>}
+                                {!activeSlot.is_empty && (<><span>•</span><span>本季服事 {currentUsageCount[activeSlot.member_id] || 0} 次</span></>)}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -731,7 +737,13 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                             <div className="flex flex-col gap-2">
                                                 {c.swapOptions.map((swap, i) => (
                                                     <div key={i} className="flex items-center justify-between bg-indigo-50/50 text-indigo-800 px-2.5 py-1.5 rounded-lg border border-indigo-100">
-                                                        <div className="text-sm font-bold text-indigo-950">{swap.service_date}<span className="text-slate-600 ml-1">({swap._positionName} • {swap.session})</span></div>
+                                                        
+                                                        {/* 修改 4：可互換班次列表，執事輪值不顯示堂別 */}
+                                                        <div className="text-sm font-bold text-indigo-950">
+                                                            {swap.service_date}
+                                                            <span className="text-slate-600 ml-1">({swap._positionName}{swap._positionName !== '執事輪值' ? ` • ${swap.session}` : ''})</span>
+                                                        </div>
+                                                        
                                                         <button onClick={() => requestSwap(c, swap)} className="flex items-center gap-1 bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white border border-indigo-200 py-1.5 px-3 rounded-md text-[13px] font-medium transition-colors shadow-sm"><RefreshCw size={14} /> 換班</button>
                                                     </div>
                                                 ))}
