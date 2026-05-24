@@ -92,7 +92,8 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
 
     const effectiveMembers = useMemo(() => {
         return dbData.members
-            .filter(m => m.name !== 'SYSTEM_CUSTOM_HOLIDAYS_DB' && m.name !== 'SYSTEM_SCHEDULE_ARCHIVE')
+            // 透過 startsWith 一次性排除所有系統保留帳號
+            .filter(m => m.name && !m.name.startsWith('SYSTEM_'))
             .map(m => {
                 const qs = dbData.memberQuarterSettings.find(s => s.member_id === m.id && s.quarter === currentQuarterStr);
                 return {
