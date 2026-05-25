@@ -576,7 +576,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                     <div key={member.id} className="bg-white rounded-xl p-4 sm:p-6 shadow-soft border border-slate-100 hover:shadow-hover-soft hover:-translate-y-1 transition-all duration-200 relative group">
                                         <div className="flex justify-between items-start mb-3">
                                             <div>
-                                                <h3 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2 flex-wrap leading-tight">
+                                                <h3 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2 flex-wrap leading-tight">
                                                     {member.name}
                                                     {isAdmin && settings.dual_service_pref === 0 && <span className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded border border-red-100 font-normal">關閉兼任</span>}
                                                     {isAdmin && settings.dual_service_pref === 1 && <span className="text-[10px] bg-violet-50 text-violet-600 px-2 py-0.5 rounded border border-violet-100 font-normal">二堂同崗</span>}
