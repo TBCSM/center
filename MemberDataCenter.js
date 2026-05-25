@@ -599,10 +599,10 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                         </div>
                                         <div className="space-y-2.5">
                                             <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                                <p className="text-[10px] font-medium text-slate-400 mb-1.5 flex items-center gap-1"><ShieldCheck size={12}/> 服事崗位 ({ownedPosList.length})</p>
+                                                <p className="text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-1.5"><ShieldCheck size={12}/> 服事崗位 ({ownedPosList.length})</p>
                                                 <div className="flex flex-wrap gap-1.5">
                                                     {ownedPosList.length > 0 ? ownedPosList.map(p => (
-                                                        <span key={p.name} className={`text-xs font-normal px-2 py-1 rounded-md border flex items-center gap-1 ${p.isActive ? 'bg-white border-slate-200 text-slate-700 shadow-sm' : 'bg-slate-100 border-slate-200 border-dashed text-slate-400'}`}>
+                                                        <span key={p.name} className={`text-sm font-medium px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${p.isActive ? 'bg-white border-slate-200 text-slate-700 shadow-sm' : 'bg-slate-100 border-slate-200 border-dashed text-slate-400'}`}>
                                                             {p.name} 
                                                             {isAdmin && !p.isActive && <span className="text-[10px] bg-slate-200 text-slate-500 px-1 rounded">暫停</span>}
                                                             {isAdmin && (p.name.includes('新朋友') && settings.newcomer_rule > 0) && (
@@ -616,10 +616,10 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                             </div>
                                             {(settings.unavailable_dates && settings.unavailable_dates.length > 0) && (
                                                 <div className="bg-orange-50/60 p-3 rounded-lg border border-orange-100">
-                                                    <p className="text-[10px] font-medium text-orange-400 mb-1.5 flex items-center gap-1"><CalendarX size={12}/> 不可排班日 ({settings.unavailable_dates.length})</p>
+                                                    <p className="text-sm font-medium text-orange-500 mb-1.5 flex items-center gap-1.5"><CalendarX size={12}/> 不可排班日 ({settings.unavailable_dates.length})</p>
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {settings.unavailable_dates.map(d => (
-                                                            <span key={d} className="text-[11px] font-normal bg-white text-orange-600 px-2 py-0.5 rounded border border-orange-200 shadow-sm">{d.split('-').slice(1).join('/')}</span>
+                                                            <span key={d} className="text-sm font-medium bg-white text-orange-600 px-3 py-1 rounded-md border border-orange-200 shadow-sm">{d.split('-').slice(1).join('/')}</span>
                                                         ))}
                                                     </div>
                                                 </div>
