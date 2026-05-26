@@ -96,7 +96,6 @@
 
         const constants = {
             ADMIN_ACCOUNT: "tbcadmin", 
-            // 🛑 已更改：避開使用 gmail.com 作為虛擬後綴，改用內部自訂網域
             VIRTUAL_DOMAIN: "@tbc.gmail.com",
             sessionsToSchedule: ['第一堂', '第二堂'],
             DEFAULT_MEMBER: {
@@ -234,7 +233,7 @@
 
                         if (!isMember) {
                             // 如果回傳 false，代表同工名單中沒有這個帳號/電話
-                            throw new Error('查無帳號！請確認輸入是否正確，或聯絡行政辦公室。');
+                            throw new Error('查無帳號！再試一次，或聯絡行政辦公室。');
                         }
 
                         // ==========================================
@@ -273,7 +272,7 @@
                     // ==========================================
                     let msg = error.message;
                     if (msg.includes('Invalid login credentials')) msg = '登入失敗：帳號或密碼錯誤';
-                    if (msg.includes('User already registered')) msg = 'Oops！帳號已註冊，若忘記密碼請聯絡行政辦公室重設';
+                    if (msg.includes('User already registered')) msg = 'Oops！帳號已註冊';
                     if (msg.includes('Password should be at least')) msg = '密碼長度至少需6個字元';
                     if (msg.includes('邀請碼錯誤')) msg = error.message; 
                     if (msg.includes('兩次輸入的密碼不同')) msg = error.message; 
