@@ -690,15 +690,20 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                     <div className="flex items-center gap-3 relative z-10 pr-6">
                         <div className={`p-2.5 rounded-lg shrink-0 ${activeSlot.is_empty ? 'bg-rose-500/20 text-rose-300' : 'bg-white/10 text-indigo-300'}`}><Calendar size={20} /></div>
                         <div className="flex flex-col gap-1 w-full">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-lg font-bold text-white leading-none">{activeSlot.service_date}</p>
-                                <span className={`px-2 py-0.5 rounded-md text-[13px] font-semibold tracking-wide leading-none ${activeSlot.is_empty ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white'}`}>{activeSlot._memberName}</span>
+                            
+                            {/* 修改：加大日期與姓名字體，並稍微拉開兩者間距 gap-2.5 */}
+                            <div className="flex flex-wrap items-center gap-2.5">
+                                <p className="text-2xl font-bold text-white leading-none">{activeSlot.service_date}</p>
+                                <span className={`px-2.5 py-1 rounded-md text-[15px] font-semibold tracking-wide leading-none ${activeSlot.is_empty ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white'}`}>{activeSlot._memberName}</span>
                             </div>
-                            <div className="flex items-center gap-1.5 text-[11px] font-normal text-slate-400 flex-wrap mt-0.5">
-                                <span className="bg-white/10 px-1.5 py-0.5 rounded text-slate-300">{activeSlot._positionName}</span>
+                            
+                            {/* 修改：加大下方資訊列字體至 text-[13px]，並增加 mt-1.5 避免與上方大字太擠 */}
+                            <div className="flex items-center gap-1.5 text-[13px] font-normal text-slate-400 flex-wrap mt-1.5">
+                                <span className="bg-white/10 px-2 py-0.5 rounded text-slate-300">{activeSlot._positionName}</span>
                                 {activeSlot._positionName !== '執事輪值' && <><span>•</span><span>{activeSlot.session}</span></>}
                                 {!activeSlot.is_empty && (<><span>•</span><span>本季服事 {currentUsageCount[activeSlot.member_id] || 0} 次</span></>)}
                             </div>
+                            
                         </div>
                     </div>
                 </div>
@@ -710,7 +715,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6 pt-2 space-y-4">
-                    <div className="flex items-center justify-between px-1"><h3 className="font-bold text-slate-900 flex items-center gap-2 text-sm"><UserCheck className="text-emerald-500" size={16}/> 推薦人選 ({finalRecommendations.length})</h3><span className="text-[12px] bg-slate-100 text-slate-500 px-2 py-1 rounded-md font-medium">依本季服事次數排序</span></div>
+                    <div className="flex items-center justify-between px-1"><h3 className="font-bold text-slate-900 flex items-center gap-2 text-sm"><UserCheck className="text-emerald-500" size={16}/> 推薦人選 ({finalRecommendations.length})</h3><span className="text-[12px] bg-slate-100 text-slate-500 px-2 py-1 rounded-md font-medium">依本季次數排序</span></div>
                     {finalRecommendations.length > 0 ? (
                         finalRecommendations.map((c, idx) => (
                             <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-soft hover:-translate-y-0.5">
