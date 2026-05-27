@@ -25,7 +25,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     const [isSubmissionOpen, setIsSubmissionOpen] = useState(false);
     const [isLargeFont, setIsLargeFont] = useState(false); // 控制字體大小的 state
 
-    const [quarterOptions, setQuarterOptions] = useState(['BASE', ...generateBaseQuarters()]);
+    const [quarterOptions, setQuarterOptions] = useState(['BASE']);
     const initialQuarter = isAdmin ? getCurrentQuarter() : getNextQuarter(getCurrentQuarter());
     const [viewQuarter, setViewQuarter] = useState(initialQuarter); 
     
@@ -110,11 +110,16 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             setCustomHolidays(parsedHolidays);
 
             if (allSettingsQs) {
-                const dbQuarters = allSettingsQs.map(d => d.quarter).filter(q => q !== 'SYSTEM' && q !== 'BASE');
-                const viewQFiltered = viewQuarter === 'BASE' ? [] : [viewQuarter];
-                const combinedQs = [...new Set([...generateBaseQuarters(), ...dbQuarters, ...viewQFiltered])].sort();
-                setQuarterOptions(['BASE', ...combinedQs]);
-            }
+    // 1. 取出資料庫實際存在的季度
+    const dbQuarters = allSettingsQs.map(d => d.quarter).filter(q => q !== 'SYSTEM' && q !== 'BASE');
+    
+    // 2. 保留當前檢視的 viewQuarter，避免 <select> 找不到預設選項而顯示空白
+    const viewQFiltered = viewQuarter === 'BASE' ? [] : [viewQuarter];
+    
+    // 3. 移除預設生成的 generateBaseQuarters()，只依賴真實資料與當前檢視項
+    const combinedQs = [...new Set([...dbQuarters, ...viewQFiltered])].sort();
+    setQuarterOptions(['BASE', ...combinedQs]);
+}
         } catch (err) { showMessage('error', '載入資料失敗，請確認連線。'); } finally { setIsLoading(false); }
     };
 
@@ -267,7 +272,12 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
         } catch (err) { showMessage('error', '刪除失敗: ' + err.message); } finally { setIsLoading(false); }
     };
 
-    const openAddModal = () => { setEditingMember(null); setFormData({ ...DEFAULT_MEMBER }); setFormPositions({}); setIsModalOpen(true); };
+    const openAddModal = () => { 
+    setEditingMember(null); 
+    setFormData({ ...DEFAULT_MEMBER, dual_service_pref: '' }); 
+    setFormPositions({}); 
+    setIsModalOpen(true); 
+};
 
     const handleAddCustomHoliday = async () => {
         if (!newHolidayDate || !newHolidayName.trim()) return showMessage('error', '選擇日期，填寫節日提醒內容');
@@ -711,7 +721,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                 </div>
                                 {isAdmin && (
                                     <div className="space-y-2 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
-                                        <label className="text-xs font-medium text-indigo-600 flex items-center gap-1.5 flex-wrap"><User size={14}/> 帳號 <span className="text-[10px] text-indigo-400 font-normal">(忘記密碼需通知「管理員」重設密碼)</span></label>
+                                        <label className="text-xs font-medium text-indigo-600 flex items-center gap-1.5 flex-wrap">     <User size={14}/> 帳號      <span className="text-xs text-indigo-400 font-normal">(忘記密碼需通知「管理員」重設密碼)</span> </label>
                                         <input type="text" value={formData.email ?? ''} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-white border border-indigo-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all" placeholder="電話號碼或電子郵件" />
                                     </div>
                                 )}
@@ -755,7 +765,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                                         }} />
                                                         {isChecked && <Check className="absolute top-1 right-1 text-orange-500" size={14} strokeWidth={3} />}
                                                         <span className={`text-base sm:text-sm font-medium ${isChecked ? 'text-orange-600' : 'text-slate-600'}`}>{shortDate}</span>
-                                                        {holidayName && <span className={`text-[10px] font-normal mt-1 text-center leading-tight ${isChecked ? 'text-orange-500' : 'text-slate-400'}`}>{holidayName}</span>}
+                                                        {holidayName && <span className={`text-xs font-normal mt-1 text-center leading-tight ${isChecked ? 'text-orange-500' : 'text-slate-400'}`}>{holidayName}</span>}
                                                     </label>
                                                 );
                                             })}
