@@ -687,19 +687,26 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                 <div className="bg-slate-900 px-5 py-4 rounded-b-[1.25rem] shadow-sm border-b border-slate-800 relative z-20 shrink-0 overflow-hidden">
                     <div className="absolute top-[-20%] right-[-10%] w-40 h-40 rounded-full bg-violet-600/30 blur-3xl pointer-events-none"></div>
                     <button onClick={() => { setActiveSlot(null); setSearchTerm(''); }} className="absolute right-4 top-4 z-50 p-1.5 rounded-lg text-slate-300 transition-colors duration-75 hover:bg-white/20 hover:text-white cursor-pointer active:scale-95"><X size={18}/></button>
-                    <div className="flex items-center gap-3 relative z-10 pr-6">
-                        <div className={`p-2.5 rounded-lg shrink-0 ${activeSlot.is_empty ? 'bg-rose-500/20 text-rose-300' : 'bg-white/10 text-indigo-300'}`}><Calendar size={20} /></div>
+                    
+                    {/* 修改：整個左側間距微調，從 gap-3 縮小為 gap-2.5 以適應更小的字體 */}
+                    <div className="flex items-center gap-2.5 relative z-10 pr-6">
+                        
+                        {/* 修改：Icon 外框縮小為 p-2，Calendar 尺寸縮小為 18 */}
+                        <div className={`p-2 rounded-lg shrink-0 ${activeSlot.is_empty ? 'bg-rose-500/20 text-rose-300' : 'bg-white/10 text-indigo-300'}`}>
+                            <Calendar size={20} />
+                        </div>
+                        
                         <div className="flex flex-col gap-1 w-full">
                             
-                            {/* 修改：加大日期與姓名字體，並稍微拉開兩者間距 gap-2.5 */}
-                            <div className="flex flex-wrap items-center gap-2.5">
-                                <p className="text-2xl font-bold text-white leading-none">{activeSlot.service_date}</p>
-                                <span className={`px-2.5 py-1 rounded-md text-[15px] font-semibold tracking-wide leading-none ${activeSlot.is_empty ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white'}`}>{activeSlot._memberName}</span>
+                            {/* 修改：日期與姓名標籤，統一使用 text-[15px]，間距改為 gap-2 */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-[15px] font-bold text-white leading-none">{activeSlot.service_date}</p>
+                                <span className={`px-2 py-0.5 rounded-md text-[15px] font-semibold tracking-wide leading-none ${activeSlot.is_empty ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white'}`}>{activeSlot._memberName}</span>
                             </div>
                             
-                            {/* 修改：加大下方資訊列字體至 text-[13px]，並增加 mt-1.5 避免與上方大字太擠 */}
-                            <div className="flex items-center gap-1.5 text-[13px] font-normal text-slate-400 flex-wrap mt-1.5">
-                                <span className="bg-white/10 px-2 py-0.5 rounded text-slate-300">{activeSlot._positionName}</span>
+                            {/* 下方資訊列維持 text-[13px]，但稍微調小上距為 mt-1 讓排版更緊湊 */}
+                            <div className="flex items-center gap-1.5 text-[13px] font-normal text-slate-400 flex-wrap mt-1">
+                                <span className="bg-white/10 px-1.5 py-0.5 rounded text-slate-300">{activeSlot._positionName}</span>
                                 {activeSlot._positionName !== '執事輪值' && <><span>•</span><span>{activeSlot.session}</span></>}
                                 {!activeSlot.is_empty && (<><span>•</span><span>本季服事 {currentUsageCount[activeSlot.member_id] || 0} 次</span></>)}
                             </div>
