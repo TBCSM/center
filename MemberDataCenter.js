@@ -552,16 +552,17 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                         {isAdmin && (
                             <>
                                {/* 新增、刪除、儲存 膠囊按鈕組 */}
-<div className="flex items-center rounded-full border border-slate-200/80 overflow-hidden shadow-sm divide-x divide-slate-200/80">
-    <button onClick={openCreateQuarterModal} className="whitespace-nowrap flex items-center gap-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 text-xs font-medium px-3.5 py-1.5 transition-all">
-        <Copy size={14} /> 新增
+{/* 新增、刪除、儲存 膠囊按鈕組 */}
+<div className="flex items-center bg-white rounded-full border border-slate-200 overflow-hidden shadow-sm divide-x divide-slate-200">
+    <button onClick={openCreateQuarterModal} className="whitespace-nowrap flex items-center gap-1.5 text-slate-600 hover:bg-slate-50 text-xs font-medium px-3.5 py-1.5 transition-all">
+        <Copy size={14} className="text-slate-600" /> 新增
     </button>
-    <button onClick={openDeleteQuarterModal} className="whitespace-nowrap flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 text-xs font-medium px-3.5 py-1.5 transition-all">
-        <Trash2 size={14} /> 刪除
+    <button onClick={openDeleteQuarterModal} className="whitespace-nowrap flex items-center gap-1.5 text-slate-600 hover:bg-slate-50 text-xs font-medium px-3.5 py-1.5 transition-all">
+        <Trash2 size={14} className="text-slate-600" /> 刪除
     </button>
     {viewQuarter !== 'BASE' && (
-        <button onClick={triggerSaveToBase} className="whitespace-nowrap flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-medium px-3.5 py-1.5 transition-all">
-            <Save size={14} /> 儲存
+        <button onClick={triggerSaveToBase} className="whitespace-nowrap flex items-center gap-1.5 text-slate-600 hover:bg-slate-50 text-xs font-medium px-3.5 py-1.5 transition-all">
+            <Save size={14} className="text-slate-600" /> 儲存
         </button>
     )}
 </div>
