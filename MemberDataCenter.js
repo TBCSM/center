@@ -551,11 +551,20 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                         {/* 這裡保留原本 isAdmin 的其他按鈕 (新增/刪除/儲存/節日提醒...) */}
                         {isAdmin && (
                             <>
-                                <button onClick={openCreateQuarterModal} className="whitespace-nowrap flex items-center gap-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 text-xs font-medium px-3 py-1.5 rounded-lg transition-all"><Copy size={14} /> 新增</button>
-                                <button onClick={openDeleteQuarterModal} className="whitespace-nowrap flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 text-xs font-medium px-3 py-1.5 rounded-lg transition-all"><Trash2 size={14} /> 刪除</button>
-                                {viewQuarter !== 'BASE' && (
-                                    <button onClick={triggerSaveToBase} className="whitespace-nowrap flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-medium px-3 py-1.5 rounded-lg transition-all"><Save size={14} /> 儲存</button>
-                                )}
+                               {/* 新增、刪除、儲存 膠囊按鈕組 */}
+<div className="flex items-center rounded-full border border-slate-200/80 overflow-hidden shadow-sm divide-x divide-slate-200/80">
+    <button onClick={openCreateQuarterModal} className="whitespace-nowrap flex items-center gap-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 text-xs font-medium px-3.5 py-1.5 transition-all">
+        <Copy size={14} /> 新增
+    </button>
+    <button onClick={openDeleteQuarterModal} className="whitespace-nowrap flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 text-xs font-medium px-3.5 py-1.5 transition-all">
+        <Trash2 size={14} /> 刪除
+    </button>
+    {viewQuarter !== 'BASE' && (
+        <button onClick={triggerSaveToBase} className="whitespace-nowrap flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-medium px-3.5 py-1.5 transition-all">
+            <Save size={14} /> 儲存
+        </button>
+    )}
+</div>
                                 <button onClick={() => setIsHolidayManagerOpen(true)} className="whitespace-nowrap flex items-center gap-1.5 bg-sky-50 text-sky-600 hover:bg-sky-100 text-xs font-medium px-3 py-1.5 rounded-lg transition-all"><CalendarX size={14} /> 節日提醒</button>
                                 
                                 <button onClick={toggleSubmissionStatus} className={`whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm border ${isSubmissionOpen ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}>
