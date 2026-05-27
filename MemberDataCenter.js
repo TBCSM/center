@@ -594,10 +594,10 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                             <div>
                                                 <h3 className={`${isLargeFont ? 'text-2xl sm:text-3xl' : 'text-xl sm:text-2xl'} font-bold text-slate-900 flex items-center gap-2 flex-wrap leading-tight`}>
                                                     {member.name}
-                                                    {isAdmin && settings.dual_service_pref === 0 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-red-50 text-red-600 rounded border border-red-100 font-normal`}>關閉兼任</span>}
-                                                    {isAdmin && settings.dual_service_pref === 1 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-violet-50 text-violet-600 rounded border border-violet-100 font-normal`}>二堂同崗</span>}
-                                                    {isAdmin && settings.dual_service_pref === 2 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-violet-50 text-violet-600 rounded border border-violet-100 font-normal`}>二堂異崗</span>}
-                                                    {isAdmin && member.group_id && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-indigo-50 text-indigo-600 rounded border border-indigo-100 font-normal`}>{member.group_id}</span>}
+                                                    {isAdmin && settings.dual_service_pref === 0 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-red-50 text-red-600 rounded border border-red-100 font-bold`}>關閉兼任</span>}
+{isAdmin && settings.dual_service_pref === 1 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-violet-50 text-violet-600 rounded border border-violet-100 font-bold`}>二堂同崗</span>}
+{isAdmin && settings.dual_service_pref === 2 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-violet-50 text-violet-600 rounded border border-violet-100 font-bold`}>二堂異崗</span>}
+{isAdmin && member.group_id && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-indigo-50 text-indigo-600 rounded border border-indigo-100 font-bold`}>{member.group_id}</span>}
                                                 </h3>
                                                 <div className={`flex items-center flex-wrap gap-1.5 ${isLargeFont ? 'text-sm' : 'text-xs'} font-normal mt-3`}>
                                                     <span className={`px-2 py-0.5 rounded-full ${settings.availability_status === '穩定服事' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
