@@ -693,15 +693,15 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                         
                         {/* 修改：Icon 外框縮小為 p-2，Calendar 尺寸縮小為 18 */}
                         <div className={`p-2 rounded-lg shrink-0 ${activeSlot.is_empty ? 'bg-rose-500/20 text-rose-300' : 'bg-white/10 text-indigo-300'}`}>
-                            <Calendar size={20} />
+                            <Calendar size={22} />
                         </div>
                         
                         <div className="flex flex-col gap-1 w-full">
                             
                             {/* 修改：日期與姓名標籤，統一使用 text-[15px]，間距改為 gap-2 */}
                             <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-[15px] font-bold text-white leading-none">{activeSlot.service_date}</p>
-                                <span className={`px-2 py-0.5 rounded-md text-[15px] font-semibold tracking-wide leading-none ${activeSlot.is_empty ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white'}`}>{activeSlot._memberName}</span>
+                                <p className="text-[18px] font-bold text-white leading-none">{activeSlot.service_date}</p>
+                                <span className={`px-3 py-1 rounded-md text-[15px] font-semibold tracking-wide leading-none ${activeSlot.is_empty ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white'}`}>{activeSlot._memberName}</span>
                             </div>
                             
                             {/* 下方資訊列維持 text-[13px]，但稍微調小上距為 mt-1 讓排版更緊湊 */}
