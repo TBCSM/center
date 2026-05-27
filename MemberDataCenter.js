@@ -876,7 +876,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
                         <div className="bg-white w-full max-w-sm rounded-2xl shadow-hover-soft flex flex-col overflow-hidden animate-fade-in border border-slate-100">
                             <div className="p-6">
-                                <h3 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2"><Copy size={24} className="text-amber-500"/> 新增季度</h3>
+                                <h3 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2"><Copy size={24} className="text-amber-500"/> 新增季度資料</h3>
                                 <div className="space-y-4">
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-medium text-slate-500">資料來源</label>
