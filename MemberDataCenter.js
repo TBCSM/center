@@ -419,7 +419,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     };
 
     // ==========================================
-    // 新增：群組 ID 自動編號邏輯 (預設 FA, 只有 FA/FB)
+    // 群組 ID 自動編號邏輯 (預設 FA, 只有 FA/FB)
     // ==========================================
     const currentGroupID = formData.group_id || '';
     // 若沒有英文前綴，則預設回傳 'FA'
@@ -434,7 +434,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
 
     const handleNumberChange = (newNumber) => {
         if (newNumber === '') {
-            // 如果清空號碼，我們把整個群組 ID 清空，符合「選填」的乾淨資料狀態
             setFormData({ ...formData, group_id: '' });
             return;
         }
@@ -768,7 +767,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                     </button>
                 )}
 
-                {/* 彈窗：在手機版強制變為滿版 (h-[100dvh] rounded-none)，電腦版維持彈窗 (sm:h-auto sm:max-h-[85dvh] sm:rounded-2xl) */}
+                {/* 彈窗 */}
                 {isModalOpen && (
                     <div className="fixed inset-0 z-[100] flex flex-col justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm">
                         <div className="bg-white w-full h-[100dvh] sm:h-auto mx-auto max-w-2xl sm:max-h-[85dvh] rounded-none sm:rounded-2xl shadow-hover-soft overflow-hidden flex flex-col animate-fade-in sm:border sm:border-slate-100">
@@ -808,40 +807,39 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                     {isAdmin && (
                                         <>
                                             <div className="space-y-1.5">
-    <label className="text-xs font-medium text-slate-500 uppercase">群組 ID <span className="text-slate-400 font-normal">(選填)</span></label>
-    {/* 1. 外層加上 items-stretch 確保左右等高 */}
-    <div className="flex gap-2 items-stretch">
-        <select 
-            value={groupPrefix} 
-            onChange={e => handlePrefixChange(e.target.value)} 
-            className="w-1/3 sm:w-1/4 bg-slate-50 border border-slate-200 rounded-lg px-2 sm:px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all"
-        >
-            <option value="FA">FA</option>
-            <option value="FB">FB</option>
-        </select>
-        
-        {/* 2. 移除這裡原本多餘的 flex */}
-        <div className="flex-1 relative"> 
-            <input 
-                type="number" 
-                value={groupNumber} 
-                onChange={e => handleNumberChange(e.target.value)} 
-                {/* 3. 在這裡加上 h-full 讓輸入框填滿外層高度 */}
-                className="w-full h-full bg-slate-50 border border-slate-200 rounded-lg pl-4 pr-[4.5rem] py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all" 
-                placeholder="號碼(例:1)" 
-                min="1"
-            />
-            <button 
-                type="button"
-                onClick={autoFillNextNumber}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md text-[10px] sm:text-xs font-medium transition-colors border border-indigo-100 flex items-center gap-1 whitespace-nowrap"
-                title="自動帶入下一號"
-            >
-                自動編號
-            </button>
-        </div>
-    </div>
-</div>
+                                                <label className="text-xs font-medium text-slate-500 uppercase">群組 ID <span className="text-slate-400 font-normal">(選填)</span></label>
+                                                {/* 關鍵修正：加上 items-stretch */}
+                                                <div className="flex gap-2 items-stretch">
+                                                    <select 
+                                                        value={groupPrefix} 
+                                                        onChange={e => handlePrefixChange(e.target.value)} 
+                                                        className="w-1/3 sm:w-1/4 bg-slate-50 border border-slate-200 rounded-lg px-2 sm:px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all"
+                                                    >
+                                                        <option value="FA">FA</option>
+                                                        <option value="FB">FB</option>
+                                                    </select>
+                                                    {/* 關鍵修正：拿掉 flex */}
+                                                    <div className="flex-1 relative">
+                                                        <input 
+                                                            type="number" 
+                                                            value={groupNumber} 
+                                                            onChange={e => handleNumberChange(e.target.value)} 
+                                                            {/* 關鍵修正：加上 h-full */}
+                                                            className="w-full h-full bg-slate-50 border border-slate-200 rounded-lg pl-4 pr-[4.5rem] py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all" 
+                                                            placeholder="號碼(例:1)" 
+                                                            min="1"
+                                                        />
+                                                        <button 
+                                                            type="button"
+                                                            onClick={autoFillNextNumber}
+                                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md text-[10px] sm:text-xs font-medium transition-colors border border-indigo-100 flex items-center gap-1 whitespace-nowrap"
+                                                            title="自動帶入下一號"
+                                                        >
+                                                            自動編號
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
 
                                             <div className="space-y-1.5">
                                                 <label className="text-xs font-medium text-slate-500 uppercase">崗位兼任 <span className="text-slate-400 font-normal">(選填)</span></label>
