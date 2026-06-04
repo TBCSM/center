@@ -419,37 +419,29 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     };
 
     // ==========================================
-    // 新增：群組 ID (無補零) + 下拉選單邏輯
+    // 新增：群組 ID 自動編號邏輯 (預設 FA, 只有 FA/FB)
     // ==========================================
     const currentGroupID = formData.group_id || '';
-    const groupPrefix = currentGroupID.replace(/[0-9]/g, ''); 
+    // 若沒有英文前綴，則預設回傳 'FA'
+    const groupPrefix = currentGroupID.replace(/[0-9]/g, '') || 'FA'; 
     const groupNumberStr = currentGroupID.replace(/[^0-9]/g, ''); 
     const groupNumber = groupNumberStr ? parseInt(groupNumberStr, 10) : '';
 
-    // 自動掃描現有同工，產生下拉選單選項 (確保 FA, FB 等預設存在)
-    const existingPrefixes = [...new Set(members.map(m => (m.group_id || '').replace(/[0-9]/g, '')).filter(Boolean))].sort();
-    const prefixOptions = [...new Set(['FA', 'FB', 'FC', 'FD', 'FE', ...existingPrefixes])];
-
     const handlePrefixChange = (newPrefix) => {
-        // 直接組合，不補零
         const numberPart = groupNumber !== '' ? String(groupNumber) : '';
         setFormData({ ...formData, group_id: newPrefix + numberPart });
     };
 
     const handleNumberChange = (newNumber) => {
         if (newNumber === '') {
-            setFormData({ ...formData, group_id: groupPrefix });
+            // 如果清空號碼，我們把整個群組 ID 清空，符合「選填」的乾淨資料狀態
+            setFormData({ ...formData, group_id: '' });
             return;
         }
-        // 直接組合，不補零
         setFormData({ ...formData, group_id: groupPrefix + String(newNumber) });
     };
 
     const autoFillNextNumber = () => {
-        if (!groupPrefix) {
-            showMessage('error', '請先選擇群組 (例如 FA)');
-            return;
-        }
         const existingNums = members
             .map(m => m.group_id || '')
             .filter(id => id.startsWith(groupPrefix))
@@ -457,7 +449,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             .filter(n => !isNaN(n));
         
         const nextNum = existingNums.length === 0 ? 1 : Math.max(...existingNums) + 1;
-        // 直接存數字，不補零
         setFormData({ ...formData, group_id: groupPrefix + String(nextNum) });
     };
     // ==========================================
@@ -818,26 +809,23 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                         <>
                                             <div className="space-y-1.5">
                                                 <label className="text-xs font-medium text-slate-500 uppercase flex justify-between items-center">
-                                                    <span>群組 ID 與編號 <span className="text-slate-400 font-normal">(選填)</span></span>
+                                                    <span>群組 ID <span className="text-slate-400 font-normal">(選填)</span></span>
                                                 </label>
                                                 <div className="flex gap-2">
-                                                    {/* 下拉選單：自動抓取現有前綴 + 預設選項 */}
                                                     <select 
                                                         value={groupPrefix} 
                                                         onChange={e => handlePrefixChange(e.target.value)} 
-                                                        className="w-1/2 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all"
+                                                        className="w-1/3 sm:w-1/4 bg-slate-50 border border-slate-200 rounded-lg px-2 sm:px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all"
                                                     >
-                                                        <option value="">選擇群組</option>
-                                                        {prefixOptions.map(prefix => (
-                                                            <option key={prefix} value={prefix}>{prefix}</option>
-                                                        ))}
+                                                        <option value="FA">FA</option>
+                                                        <option value="FB">FB</option>
                                                     </select>
-                                                    <div className="w-1/2 relative flex">
+                                                    <div className="flex-1 relative flex">
                                                         <input 
                                                             type="number" 
                                                             value={groupNumber} 
                                                             onChange={e => handleNumberChange(e.target.value)} 
-                                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-4 pr-16 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all" 
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-4 pr-[4.5rem] py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all" 
                                                             placeholder="號碼(例:1)" 
                                                             min="1"
                                                         />
@@ -847,15 +835,10 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                                             className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md text-[10px] sm:text-xs font-medium transition-colors border border-indigo-100 flex items-center gap-1 whitespace-nowrap"
                                                             title="自動帶入下一號"
                                                         >
-                                                            自動+1
+                                                            自動編號
                                                         </button>
                                                     </div>
                                                 </div>
-                                                {formData.group_id && (
-                                                    <p className="text-[10px] text-slate-400 mt-1 pl-1">
-                                                        預計儲存為：<span className="font-bold text-indigo-500 tracking-wider">{formData.group_id}</span>
-                                                    </p>
-                                                )}
                                             </div>
 
                                             <div className="space-y-1.5">
