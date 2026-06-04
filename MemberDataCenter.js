@@ -418,6 +418,46 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
         });
     };
 
+    // ==========================================
+    // 新增：群組 ID 自動化編號與拆解邏輯
+    // ==========================================
+    const currentGroupID = formData.group_id || '';
+    const groupPrefix = currentGroupID.replace(/[0-9]/g, ''); 
+    const groupNumberStr = currentGroupID.replace(/[^0-9]/g, ''); 
+    const groupNumber = groupNumberStr ? parseInt(groupNumberStr, 10) : '';
+
+    const handlePrefixChange = (newPrefix) => {
+        const upperPrefix = newPrefix.toUpperCase();
+        const paddedNumber = groupNumber !== '' ? String(groupNumber).padStart(3, '0') : '';
+        setFormData({ ...formData, group_id: upperPrefix + paddedNumber });
+    };
+
+    const handleNumberChange = (newNumber) => {
+        if (newNumber === '') {
+            setFormData({ ...formData, group_id: groupPrefix });
+            return;
+        }
+        const paddedNumber = String(newNumber).padStart(3, '0');
+        setFormData({ ...formData, group_id: groupPrefix + paddedNumber });
+    };
+
+    const autoFillNextNumber = () => {
+        if (!groupPrefix) {
+            showMessage('error', '請先在左側輸入群組英文 (例如 FA)');
+            return;
+        }
+        const existingNums = members
+            .map(m => m.group_id || '')
+            .filter(id => id.startsWith(groupPrefix))
+            .map(id => parseInt(id.replace(groupPrefix, ''), 10))
+            .filter(n => !isNaN(n));
+        
+        const nextNum = existingNums.length === 0 ? 1 : Math.max(...existingNums) + 1;
+        const paddedNextNum = String(nextNum).padStart(3, '0');
+        setFormData({ ...formData, group_id: groupPrefix + paddedNextNum });
+    };
+    // ==========================================
+
     let displayMembers = members.filter(m => {
         if (m.name && m.name.startsWith('SYSTEM_')) return false;
     
@@ -773,9 +813,43 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                     {isAdmin && (
                                         <>
                                             <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-slate-500 uppercase">群組 ID <span className="text-slate-400 font-normal">(選填)</span></label>
-                                                <input type="text" value={formData.group_id ?? ''} onChange={e => setFormData({...formData, group_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 uppercase transition-all" placeholder="例如：FA" />
+                                                <label className="text-xs font-medium text-slate-500 uppercase flex justify-between items-center">
+                                                    <span>群組 ID 與編號 <span className="text-slate-400 font-normal">(選填)</span></span>
+                                                </label>
+                                                <div className="flex gap-2">
+                                                    <input 
+                                                        type="text" 
+                                                        value={groupPrefix} 
+                                                        onChange={e => handlePrefixChange(e.target.value)} 
+                                                        className="w-1/2 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 uppercase transition-all" 
+                                                        placeholder="英文(例:FA)" 
+                                                    />
+                                                    <div className="w-1/2 relative flex">
+                                                        <input 
+                                                            type="number" 
+                                                            value={groupNumber} 
+                                                            onChange={e => handleNumberChange(e.target.value)} 
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-4 pr-16 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all" 
+                                                            placeholder="號碼(例:1)" 
+                                                            min="1"
+                                                        />
+                                                        <button 
+                                                            type="button"
+                                                            onClick={autoFillNextNumber}
+                                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md text-[10px] sm:text-xs font-medium transition-colors border border-indigo-100 flex items-center gap-1 whitespace-nowrap"
+                                                            title="自動帶入下一號"
+                                                        >
+                                                            自動+1
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {formData.group_id && (
+                                                    <p className="text-[10px] text-slate-400 mt-1 pl-1">
+                                                        預計儲存為：<span className="font-bold text-indigo-500 tracking-wider">{formData.group_id}</span>
+                                                    </p>
+                                                )}
                                             </div>
+
                                             <div className="space-y-1.5">
                                                 <label className="text-xs font-medium text-slate-500 uppercase">崗位兼任 <span className="text-slate-400 font-normal">(選填)</span></label>
                                                 <select value={formData.dual_service_pref ?? ''} onChange={e => setFormData({...formData, dual_service_pref: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all">
