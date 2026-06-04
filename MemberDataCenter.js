@@ -419,17 +419,21 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     };
 
     // ==========================================
-    // 新增：群組 ID 自動化編號與拆解邏輯
+    // 新增：群組 ID (無補零) + 下拉選單邏輯
     // ==========================================
     const currentGroupID = formData.group_id || '';
     const groupPrefix = currentGroupID.replace(/[0-9]/g, ''); 
     const groupNumberStr = currentGroupID.replace(/[^0-9]/g, ''); 
     const groupNumber = groupNumberStr ? parseInt(groupNumberStr, 10) : '';
 
+    // 自動掃描現有同工，產生下拉選單選項 (確保 FA, FB 等預設存在)
+    const existingPrefixes = [...new Set(members.map(m => (m.group_id || '').replace(/[0-9]/g, '')).filter(Boolean))].sort();
+    const prefixOptions = [...new Set(['FA', 'FB', 'FC', 'FD', 'FE', ...existingPrefixes])];
+
     const handlePrefixChange = (newPrefix) => {
-        const upperPrefix = newPrefix.toUpperCase();
-        const paddedNumber = groupNumber !== '' ? String(groupNumber).padStart(3, '0') : '';
-        setFormData({ ...formData, group_id: upperPrefix + paddedNumber });
+        // 直接組合，不補零
+        const numberPart = groupNumber !== '' ? String(groupNumber) : '';
+        setFormData({ ...formData, group_id: newPrefix + numberPart });
     };
 
     const handleNumberChange = (newNumber) => {
@@ -437,13 +441,13 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             setFormData({ ...formData, group_id: groupPrefix });
             return;
         }
-        const paddedNumber = String(newNumber).padStart(3, '0');
-        setFormData({ ...formData, group_id: groupPrefix + paddedNumber });
+        // 直接組合，不補零
+        setFormData({ ...formData, group_id: groupPrefix + String(newNumber) });
     };
 
     const autoFillNextNumber = () => {
         if (!groupPrefix) {
-            showMessage('error', '請先在左側輸入群組英文 (例如 FA)');
+            showMessage('error', '請先選擇群組 (例如 FA)');
             return;
         }
         const existingNums = members
@@ -453,8 +457,8 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             .filter(n => !isNaN(n));
         
         const nextNum = existingNums.length === 0 ? 1 : Math.max(...existingNums) + 1;
-        const paddedNextNum = String(nextNum).padStart(3, '0');
-        setFormData({ ...formData, group_id: groupPrefix + paddedNextNum });
+        // 直接存數字，不補零
+        setFormData({ ...formData, group_id: groupPrefix + String(nextNum) });
     };
     // ==========================================
 
@@ -817,13 +821,17 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                                     <span>群組 ID 與編號 <span className="text-slate-400 font-normal">(選填)</span></span>
                                                 </label>
                                                 <div className="flex gap-2">
-                                                    <input 
-                                                        type="text" 
+                                                    {/* 下拉選單：自動抓取現有前綴 + 預設選項 */}
+                                                    <select 
                                                         value={groupPrefix} 
                                                         onChange={e => handlePrefixChange(e.target.value)} 
-                                                        className="w-1/2 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 uppercase transition-all" 
-                                                        placeholder="英文(例:FA)" 
-                                                    />
+                                                        className="w-1/2 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all"
+                                                    >
+                                                        <option value="">選擇群組</option>
+                                                        {prefixOptions.map(prefix => (
+                                                            <option key={prefix} value={prefix}>{prefix}</option>
+                                                        ))}
+                                                    </select>
                                                     <div className="w-1/2 relative flex">
                                                         <input 
                                                             type="number" 
