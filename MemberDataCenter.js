@@ -55,7 +55,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     const [newHolidayName, setNewHolidayName] = useState('');
 
     const [editingMember, setEditingMember] = useState(null); 
-    const [formData, setFormData] = useState({ ...DEFAULT_MEMBER });
+    const [formData, setFormData] = useState({ ...DEFAULT_MEMBER, unavailable_weeks: [] });
     const [formPositions, setFormPositions] = useState({}); 
 
     const loadData = async () => {
@@ -193,7 +193,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                     member_id: s.member_id, preferred_session: s.preferred_session,
                     availability_status: s.availability_status === '安息季' ? '穩定服事' : s.availability_status,
                     dual_service_pref: s.dual_service_pref, newcomer_rule: s.newcomer_rule,
-                    unavailable_dates: [], quarter: targetQ
+                    unavailable_dates: [], unavailable_weeks: s.unavailable_weeks || [], quarter: targetQ
                 }));
                 const { error: insErr1 } = await supabase.from('member_quarter_settings').upsert(newSettings, { onConflict: 'member_id, quarter' });
                 if (insErr1) throw new Error("寫入設定失敗: " + insErr1.message);
@@ -270,7 +270,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
 
     const openAddModal = () => { 
         setEditingMember(null); 
-        setFormData({ ...DEFAULT_MEMBER, dual_service_pref: '' }); 
+        setFormData({ ...DEFAULT_MEMBER, dual_service_pref: '', unavailable_weeks: [] }); 
         setFormPositions({}); 
         setIsModalOpen(true); 
     };
@@ -325,6 +325,12 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             try { const parsed = JSON.parse(settings.unavailable_dates); safeDates = Array.isArray(parsed) ? parsed : [settings.unavailable_dates]; }
             catch(err) { safeDates = settings.unavailable_dates ? [settings.unavailable_dates] : []; }
         }
+
+        let safeUnavailableWeeks = [];
+        if (Array.isArray(settings.unavailable_weeks)) safeUnavailableWeeks = settings.unavailable_weeks;
+        else if (typeof settings.unavailable_weeks === 'string') {
+            try { const p = JSON.parse(settings.unavailable_weeks); safeUnavailableWeeks = Array.isArray(p) ? p : []; } catch(err) {}
+        }
         
         setEditingMember(member);
         setFormData({ 
@@ -337,6 +343,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             availability_status: settings.availability_status ?? '穩定服事', 
             dual_service_pref: settings.dual_service_pref ?? '',
             unavailable_dates: safeDates, 
+            unavailable_weeks: safeUnavailableWeeks,
             newcomer_rule: settings.newcomer_rule ?? ''
         });
 
@@ -346,7 +353,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
         setIsModalOpen(true);
     };
 
-    const closeModal = () => { setIsModalOpen(false); setEditingMember(null); setFormData({ ...DEFAULT_MEMBER }); };
+    const closeModal = () => { setIsModalOpen(false); setEditingMember(null); setFormData({ ...DEFAULT_MEMBER, unavailable_weeks: [] }); };
 
     const togglePosition = (posId) => {
         if (!isAdmin) return showMessage('error', '崗位變更請洽行政辦公室');
@@ -386,7 +393,8 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             await supabase.from('member_quarter_settings').upsert({
                 member_id: memberId, quarter: viewQuarter, preferred_session: formData.preferred_session,
                 availability_status: formData.availability_status, dual_service_pref: finalDualPref,
-                newcomer_rule: parsedNewcomerRule, unavailable_dates: formData.unavailable_dates
+                newcomer_rule: parsedNewcomerRule, unavailable_dates: formData.unavailable_dates,
+                unavailable_weeks: formData.unavailable_weeks || []
             }, { onConflict: 'member_id, quarter' });
 
             if (isAdmin && memberId) {
@@ -418,9 +426,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
         });
     };
 
-    // ==========================================
-    // 群組 ID 自動編號邏輯 (預設 FA, 只有 FA/FB)
-    // ==========================================
     const currentGroupID = formData.group_id || '';
     const groupPrefix = currentGroupID.replace(/[0-9]/g, '') || 'FA'; 
     const groupNumberStr = currentGroupID.replace(/[^0-9]/g, ''); 
@@ -449,45 +454,63 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
         const nextNum = existingNums.length === 0 ? 1 : Math.max(...existingNums) + 1;
         setFormData({ ...formData, group_id: groupPrefix + String(nextNum) });
     };
-    // ==========================================
 
     let displayMembers = members.filter(m => {
+        // 排除系統帳號
         if (m.name && m.name.startsWith('SYSTEM_')) return false;
     
+        // 權限過濾
         if (!isAdmin) {
             const memberEmail = m.email ? m.email.trim() : '';
             if (memberEmail !== currentUserAccount && memberEmail !== currentUserEmail) return false;
         }
-        const term = searchTerm.toLowerCase();
+
+        const rawSearchTerm = searchTerm.trim();
+        if (!rawSearchTerm) return true;
         
-        if (m.name.toLowerCase().includes(term)) return true;
-        if (m.group_id && m.group_id.toLowerCase().includes(term)) return true;
+        const searchTerms = rawSearchTerm.toLowerCase().split(/\s+/);
         
-        const hasMatchingPosition = memberPositions.filter(mp => mp.member_id === m.id).some(mp => {
-            const p = positions.find(pos => pos.id === mp.position_id);
-            return p && p.name.toLowerCase().includes(term);
+        return searchTerms.some(term => {
+            if (m.name.toLowerCase().includes(term)) return true;
+            if (m.group_id && m.group_id.toLowerCase().includes(term)) return true;
+            
+            const hasMatchingPosition = memberPositions.filter(mp => mp.member_id === m.id).some(mp => {
+                const p = positions.find(pos => pos.id === mp.position_id);
+                return p && p.name.toLowerCase().includes(term);
+            });
+            if (hasMatchingPosition) return true;
+            
+            const settings = quarterSettings.find(s => s.member_id === m.id);
+            if (settings) {
+                if (settings.preferred_session && settings.preferred_session.toLowerCase().includes(term)) return true;
+                
+                // 【修改點】區分「暫停服事」與「暫停(單一崗位)」
+                if (settings.availability_status) {
+                    const statusStr = settings.availability_status.toLowerCase();
+                    // 若精準輸入「暫停」，不讓它模糊匹配到「暫停服事」的整體狀態
+                    if (term === '暫停' && statusStr === '暫停服事') {
+                        // 略過，交給下方的崗位檢查
+                    } else if (statusStr.includes(term)) {
+                        return true;
+                    }
+                }
+                
+                let dualPrefText = '預設兼任 開啟兼任'; 
+                if (settings.dual_service_pref === 0) dualPrefText = '關閉兼任';
+                if (settings.dual_service_pref === 1) dualPrefText = '二堂同崗';
+                if (settings.dual_service_pref === 2) dualPrefText = '二堂異崗';
+                
+                if (dualPrefText.includes(term)) return true;
+            }
+            
+            // 【修改點】只有輸入「暫停」時，才專門去檢查是否有被設為暫停 (is_active: false) 的崗位
+            if (term === '暫停') {
+                const hasSuspendedPosition = memberPositions.filter(mp => mp.member_id === m.id).some(mp => mp.is_active === false);
+                if (hasSuspendedPosition) return true;
+            }
+            
+            return false;
         });
-        if (hasMatchingPosition) return true;
-        
-        const settings = quarterSettings.find(s => s.member_id === m.id);
-        if (settings) {
-            if (settings.preferred_session && settings.preferred_session.toLowerCase().includes(term)) return true;
-            if (settings.availability_status && settings.availability_status.toLowerCase().includes(term)) return true;
-            
-            let dualPrefText = '預設兼任 開啟兼任'; 
-            if (settings.dual_service_pref === 0) dualPrefText = '關閉兼任';
-            if (settings.dual_service_pref === 1) dualPrefText = '二堂同崗';
-            if (settings.dual_service_pref === 2) dualPrefText = '二堂異崗';
-            
-            if (dualPrefText.includes(term)) return true;
-        }
-        
-        if (term.includes('暫停')) {
-            const hasSuspendedPosition = memberPositions.filter(mp => mp.member_id === m.id).some(mp => mp.is_active === false);
-            if (hasSuspendedPosition) return true;
-        }
-        
-        return false;
     });
 
     displayMembers.sort((a, b) => {
@@ -495,8 +518,8 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
         if (groupA !== groupB) return groupA.localeCompare(groupB);
         const setA = quarterSettings.find(s => s.member_id === a.id) || {};
         const setB = quarterSettings.find(s => s.member_id === b.id) || {};
-        const isTopA = (setA.newcomer_rule === 1 || setA.newcomer_rule === 3) ? -1 : 1;
-        const isTopB = (setB.newcomer_rule === 1 || setB.newcomer_rule === 3) ? -1 : 1;
+        const isTopA = (setA.newcomer_rule === 1) ? -1 : 1;
+        const isTopB = (setB.newcomer_rule === 1) ? -1 : 1;
         if (isTopA !== isTopB) return isTopA - isTopB;
         return a.name.localeCompare(b.name);
     });
@@ -685,6 +708,34 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                     return p ? { name: p.name, isActive: mp.is_active !== false } : null;
                                 }).filter(Boolean);
 
+                                // --- 計算卡片顯示的「不可排班日」(包含手動請假與跨團隊週次) ---
+                                let safeDates = [];
+                                if (Array.isArray(settings.unavailable_dates)) safeDates = [...settings.unavailable_dates];
+                                else if (typeof settings.unavailable_dates === 'string') {
+                                    try { const parsed = JSON.parse(settings.unavailable_dates); safeDates = Array.isArray(parsed) ? parsed : [settings.unavailable_dates]; }
+                                    catch(err) { safeDates = settings.unavailable_dates ? [settings.unavailable_dates] : []; }
+                                }
+
+                                let safeUnavailableWeeks = [];
+                                if (Array.isArray(settings.unavailable_weeks)) safeUnavailableWeeks = settings.unavailable_weeks;
+                                else if (typeof settings.unavailable_weeks === 'string') {
+                                    try { const p = JSON.parse(settings.unavailable_weeks); safeUnavailableWeeks = Array.isArray(p) ? p : []; } catch(err) {}
+                                }
+                                
+                                const systemBlockedDates = [];
+                                if (safeUnavailableWeeks.length > 0) {
+                                    const sundays = getSundaysInQuarter(viewQuarter);
+                                    sundays.forEach(sunday => {
+                                        const weekNum = Math.ceil(new Date(sunday).getDate() / 7);
+                                        if (safeUnavailableWeeks.includes(weekNum)) {
+                                            systemBlockedDates.push(sunday);
+                                            if (!safeDates.includes(sunday)) safeDates.push(sunday);
+                                        }
+                                    });
+                                }
+                                safeDates.sort();
+                                // -----------------------------------------------------------
+
                                 return (
                                     <div key={member.id} className="bg-white rounded-xl p-4 sm:p-6 shadow-soft border border-slate-100 hover:shadow-hover-soft hover:-translate-y-1 transition-all duration-200 relative group">
                                         <div className="flex justify-between items-start mb-3">
@@ -718,21 +769,24 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                                             {p.name} 
                                                             {isAdmin && !p.isActive && <span className={`${isLargeFont ? 'text-xs px-1.5' : 'text-[10px] px-1'} bg-slate-200 text-slate-500 rounded`}>暫停</span>}
                                                             {isAdmin && (p.name.includes('新朋友') && settings.newcomer_rule > 0) && (
-                                                                <span className={`${isLargeFont ? 'text-xs' : 'text-[10px]'} text-indigo-500 ml-0.5`}>
-                                                                    {settings.newcomer_rule === 1 ? "(主責)" : settings.newcomer_rule === 2 ? "(禁排)" : "(主責+禁排)"}
-                                                                </span>
+                                                                <span className={`${isLargeFont ? 'text-xs' : 'text-[10px]'} text-indigo-500 ml-0.5`}>(主責)</span>
                                                             )}
                                                         </span>
                                                     )) : <span className={`${isLargeFont ? 'text-sm' : 'text-slate-400'} text-xs`}>尚未設定</span>}
                                                 </div>
                                             </div>
-                                            {(settings.unavailable_dates && settings.unavailable_dates.length > 0) && (
+                                            {(safeDates && safeDates.length > 0) && (
                                                 <div className="bg-orange-50/60 p-3 rounded-lg border border-orange-100">
-                                                    <p className={`${isLargeFont ? 'text-base' : 'text-sm'} font-medium text-orange-500 mb-2 flex items-center gap-1.5`}><CalendarX size={isLargeFont ? 16 : 12}/> 不可排班日 ({settings.unavailable_dates.length})</p>
+                                                    <p className={`${isLargeFont ? 'text-base' : 'text-sm'} font-medium text-orange-500 mb-2 flex items-center gap-1.5`}><CalendarX size={isLargeFont ? 16 : 12}/> 不可排班日 ({safeDates.length})</p>
                                                     <div className="flex flex-wrap gap-2">
-                                                        {settings.unavailable_dates.map(d => (
-                                                            <span key={d} className={`${isLargeFont ? 'text-base px-4 py-1.5' : 'text-sm px-3 py-1'} font-medium bg-white text-orange-600 rounded-md border border-orange-200 shadow-sm`}>{d.split('-').slice(1).join('/')}</span>
-                                                        ))}
+                                                        {safeDates.map(d => {
+                                                            const isSystemBlocked = systemBlockedDates.includes(d);
+                                                            return (
+                                                                <span key={d} className={`${isLargeFont ? 'text-base px-4 py-1.5' : 'text-sm px-3 py-1'} font-medium bg-white rounded-md border shadow-sm ${isSystemBlocked ? 'text-indigo-600 border-indigo-200' : 'text-orange-600 border-orange-200'}`}>
+                                                                    {d.split('-').slice(1).join('/')}
+                                                                </span>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             )}
@@ -838,8 +892,32 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                             <div className="space-y-1.5">
                                                 <label className="text-xs font-medium text-slate-500 uppercase">新朋友關懷設定 <span className="text-slate-400 font-normal">(選填)</span></label>
                                                 <select value={formData.newcomer_rule ?? ''} onChange={e => setFormData({...formData, newcomer_rule: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-normal text-slate-900 transition-all">
-                                                    <option value="">預設(正常排班)</option><option value="1">主責</option><option value="2">禁排第二週</option><option value="3">主責 ＋ 禁排第二週</option>
+                                                    <option value="">預設(正常排班)</option><option value="1">主責</option>
                                                 </select>
+                                            </div>
+
+                                            <div className="space-y-1.5 sm:col-span-2 pt-2">
+                                                <label className="text-xs font-medium text-slate-500 uppercase flex items-center gap-1.5">
+                                                    不可排班周 <span className="text-slate-400 font-normal">(選填)</span>
+                                                </label>
+                                                <div className="flex flex-wrap gap-4 mt-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                    {[1, 2, 3, 4, 5].map(week => (
+                                                        <label key={week} className="flex items-center gap-2 cursor-pointer select-none">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 border-slate-300 transition-all"
+                                                                checked={(formData.unavailable_weeks || []).includes(week)}
+                                                                onChange={(e) => {
+                                                                    let newWeeks = [...(formData.unavailable_weeks || [])];
+                                                                    if (e.target.checked) newWeeks.push(week);
+                                                                    else newWeeks = newWeeks.filter(w => w !== week);
+                                                                    setFormData({ ...formData, unavailable_weeks: newWeeks.sort() });
+                                                                }}
+                                                            />
+                                                            <span className="text-sm font-medium text-slate-700">第 {week} 週</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </>
                                     )}
@@ -881,19 +959,54 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                         </label>
                                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
                                             {getSundaysInQuarter(viewQuarter).map(date => {
-                                                const isChecked = Array.isArray(formData.unavailable_dates) && formData.unavailable_dates.includes(date);
+                                                const weekNum = Math.ceil(new Date(date).getDate() / 7);
+                                                
+                                                const isSystemBlocked = Array.isArray(formData.unavailable_weeks) && formData.unavailable_weeks.includes(weekNum);
+                                                const isManuallyChecked = Array.isArray(formData.unavailable_dates) && formData.unavailable_dates.includes(date);
+                                                const isChecked = isSystemBlocked || isManuallyChecked;
+                                                
                                                 const holidayName = getHolidayName(date, customHolidays);
                                                 const shortDate = date.split('-').slice(1).join('/');
+
+                                                let containerClass = 'bg-white border-slate-200 hover:border-orange-200 hover:-translate-y-0.5';
+                                                let textClass = 'text-slate-600';
+                                                let checkColor = 'text-orange-500';
+
+                                                if (isSystemBlocked) {
+                                                    containerClass = 'bg-indigo-50 border-indigo-400 shadow-sm opacity-90';
+                                                    textClass = 'text-indigo-700';
+                                                    checkColor = 'text-indigo-500';
+                                                } else if (isManuallyChecked) {
+                                                    containerClass = 'bg-orange-50 border-orange-500 shadow-sm';
+                                                    textClass = 'text-orange-600';
+                                                }
+
                                                 return (
-                                                    <label key={date} className={`relative flex flex-col items-center justify-center p-3 sm:p-2 rounded-xl border-2 transition-all duration-200 cursor-pointer select-none active:scale-[0.97] ${isChecked ? 'bg-orange-50 border-orange-500 shadow-sm' : 'bg-white border-slate-200 hover:border-orange-200 hover:-translate-y-0.5'}`}>
-                                                        <input type="checkbox" className="sr-only" checked={isChecked} onChange={(e) => {
-                                                            let newDates = Array.isArray(formData.unavailable_dates) ? [...formData.unavailable_dates] : [];
-                                                            if (e.target.checked) { if (!newDates.includes(date)) newDates.push(date); } else { newDates = newDates.filter(d => d !== date); }
-                                                            setFormData({ ...formData, unavailable_dates: newDates.sort() });
-                                                        }} />
-                                                        {isChecked && <Check className="absolute top-1 right-1 text-orange-500" size={14} strokeWidth={3} />}
-                                                        <span className={`text-base sm:text-sm font-medium ${isChecked ? 'text-orange-600' : 'text-slate-600'}`}>{shortDate}</span>
-                                                        {holidayName && <span className={`text-xs font-normal mt-1 text-center leading-tight ${isChecked ? 'text-orange-500' : 'text-slate-400'}`}>{holidayName}</span>}
+                                                    <label key={date} className={`relative flex flex-col items-center justify-center p-3 sm:p-2 rounded-xl border-2 transition-all duration-200 cursor-pointer select-none active:scale-[0.97] ${containerClass}`}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            className="sr-only" 
+                                                            checked={isChecked} 
+                                                            onChange={(e) => {
+                                                                if (isSystemBlocked) return; 
+
+                                                                let newDates = Array.isArray(formData.unavailable_dates) ? [...formData.unavailable_dates] : [];
+                                                                if (e.target.checked) { 
+                                                                    if (!newDates.includes(date)) newDates.push(date); 
+                                                                } else { 
+                                                                    newDates = newDates.filter(d => d !== date); 
+                                                                }
+                                                                setFormData({ ...formData, unavailable_dates: newDates.sort() });
+                                                            }} 
+                                                        />
+                                                        {isChecked && <Check className={`absolute top-1 right-1 ${checkColor}`} size={14} strokeWidth={3} />}
+                                                        <span className={`text-base sm:text-sm font-bold ${textClass}`}>{shortDate}</span>
+                                                        
+                                                        {isSystemBlocked ? (
+                                                            <span className="text-xs font-normal mt-1 text-center leading-tight text-indigo-500">跨團隊服事</span>
+                                                        ) : holidayName ? (
+                                                            <span className={`text-xs font-normal mt-1 text-center leading-tight ${isChecked ? 'text-orange-500' : 'text-slate-400'}`}>{holidayName}</span>
+                                                        ) : null}
                                                     </label>
                                                 );
                                             })}
