@@ -5,7 +5,7 @@ import {
     Home, LogOut, Calendar, Lock, Unlock, Menu, BarChart3
 } from 'lucide-react';
 
-const MemberDataCenter = ({ session, goBack, goToSchedule, goToInsights, supabase, utils, constants }) => {
+const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights, supabase, utils, constants }) => {
     const { fetchAllData, extractAccountFromEmail, generateBaseQuarters, getNextQuarter, getCurrentQuarter, getSundaysInQuarter, getHolidayName } = utils;
     const { ADMIN_ACCOUNT, DEFAULT_MEMBER, SESSION_OPTIONS, STATUS_OPTIONS } = constants;
 
@@ -20,8 +20,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, goToInsights, supabas
 
     const currentUserEmail = session.user.email;
     const currentUserAccount = extractAccountFromEmail(currentUserEmail);
-    const isAdmin = session.user?.app_metadata?.role === 'admin';
-
+    
     const [isSubmissionOpen, setIsSubmissionOpen] = useState(false);
     const [isLargeFont, setIsLargeFont] = useState(false); 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -153,7 +152,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, goToInsights, supabas
 
             if (error) throw error;
             setIsSubmissionOpen(!isSubmissionOpen);
-            showMessage('success', `${!isSubmissionOpen ? '開放' : '關閉'}同工填寫權限`);
+            showMessage('success', `已${!isSubmissionOpen ? '開放' : '關閉'}同工填寫權限`);
         } catch (err) {
             showMessage('error', '權限切換失敗: ' + err.message);
         } finally {
