@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
     Users, Copy, Trash2, CalendarX, Search, X, Edit2, ShieldCheck, 
     Check, Save, CheckCircle2, AlertCircle, UserPlus, User, ChevronLeft,
-    Home, LogOut, Calendar, Lock, Unlock, Menu
+    Home, LogOut, Calendar, Lock, Unlock, Menu, BarChart3
 } from 'lucide-react';
 
-const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, constants }) => {
+const MemberDataCenter = ({ session, goBack, goToSchedule, goToInsights, supabase, utils, constants }) => {
     const { fetchAllData, extractAccountFromEmail, generateBaseQuarters, getNextQuarter, getCurrentQuarter, getSundaysInQuarter, getHolidayName } = utils;
     const { ADMIN_ACCOUNT, DEFAULT_MEMBER, SESSION_OPTIONS, STATUS_OPTIONS } = constants;
 
@@ -426,6 +426,39 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
         });
     };
 
+    // ================= 新增：重設/刪除 Auth 帳號功能 =================
+    const handleResetAuth = async (email, name) => {
+        if (!isAdmin) return;
+        if (!email || email.trim() === '') {
+            return showMessage('error', '同工沒有綁定 Email，無法執行');
+        }
+
+        setConfirmAction({
+            title: '重設密碼',
+            message: `確定重設「${name}」(${email}) 的密碼？`,
+            confirmText: '確定',
+            onConfirm: async () => {
+                setConfirmAction(null);
+                setIsLoading(true);
+                try {
+                    // 呼叫我們在資料庫建立的 RPC 函式
+                    const { error } = await supabase.rpc('delete_auth_account_by_email', { 
+                        target_email: email 
+                    });
+                    
+                    if (error) throw error;
+                    
+                    showMessage('success', `重設 ${name} 密碼完成，請通知同工重新註冊`);
+                } catch (err) {
+                    showMessage('error', '重設失敗: ' + err.message);
+                } finally {
+                    setIsLoading(false);
+                }
+            }
+        });
+    };
+    // ==============================================================
+
     const currentGroupID = formData.group_id || '';
     const groupPrefix = currentGroupID.replace(/[0-9]/g, '') || 'FA'; 
     const groupNumberStr = currentGroupID.replace(/[^0-9]/g, ''); 
@@ -456,10 +489,8 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
     };
 
     let displayMembers = members.filter(m => {
-        // 排除系統帳號
         if (m.name && m.name.startsWith('SYSTEM_')) return false;
     
-        // 權限過濾
         if (!isAdmin) {
             const memberEmail = m.email ? m.email.trim() : '';
             if (memberEmail !== currentUserAccount && memberEmail !== currentUserEmail) return false;
@@ -484,12 +515,9 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
             if (settings) {
                 if (settings.preferred_session && settings.preferred_session.toLowerCase().includes(term)) return true;
                 
-                // 【修改點】區分「暫停服事」與「暫停(單一崗位)」
                 if (settings.availability_status) {
                     const statusStr = settings.availability_status.toLowerCase();
-                    // 若精準輸入「暫停」，不讓它模糊匹配到「暫停服事」的整體狀態
                     if (term === '暫停' && statusStr === '暫停服事') {
-                        // 略過，交給下方的崗位檢查
                     } else if (statusStr.includes(term)) {
                         return true;
                     }
@@ -503,7 +531,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                 if (dualPrefText.includes(term)) return true;
             }
             
-            // 【修改點】只有輸入「暫停」時，才專門去檢查是否有被設為暫停 (is_active: false) 的崗位
             if (term === '暫停') {
                 const hasSuspendedPosition = memberPositions.filter(mp => mp.member_id === m.id).some(mp => mp.is_active === false);
                 if (hasSuspendedPosition) return true;
@@ -560,6 +587,10 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                             <button onClick={() => { goToSchedule(); setIsMobileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group">
                                 <Calendar size={18} className="text-slate-400 group-hover:text-violet-400 transition-colors" />
                                 <span>排班作業中心</span>
+                            </button>
+                            <button onClick={() => { goToInsights(); setIsMobileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group">
+                                <BarChart3 size={18} className="text-slate-400 group-hover:text-sky-400 transition-colors" />
+                                <span>人力洞察中心</span>
                             </button>
                         </nav>
                     </div>
@@ -663,8 +694,8 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                 >
                                     <CalendarX size={14} className="text-slate-500" /> 節日提醒
                                 </button>
-                                
-                                <div className="w-px h-5 bg-slate-200 mx-2 self-center"></div>
+
+                                <div className="w-px h-5 bg-slate-200 mx-1.5 self-center"></div>
                                 
                                 <button 
                                     onClick={toggleSubmissionStatus} 
@@ -690,7 +721,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                     <div className="px-6 pt-4 pb-2 bg-slate-50 z-10 shrink-0">
                         <div className="bg-white p-2 rounded-xl shadow-soft border border-slate-100 flex items-center relative transition-all focus-within:ring-2 focus-within:ring-indigo-500/20">
                             <Search className="absolute left-4 text-slate-400" size={20} />
-                            <input type="text" placeholder="搜尋姓名、群組、崗位、堂別或狀態..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-10 py-2.5 bg-transparent outline-none font-normal text-slate-800 text-sm" />
+                            <input type="text" placeholder="搜尋姓名、群組、崗位、堂別" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-10 py-2.5 bg-transparent outline-none font-normal text-slate-800 text-sm" />
                             {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-4 text-slate-400 hover:text-slate-600 transition-colors p-1"><X size={18} /></button>}
                         </div>
                     </div>
@@ -698,7 +729,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
 
                 <div className="flex-1 overflow-y-auto p-6 pt-2 custom-scrollbar pb-24">
                     {isLoading && members.length === 0 ? (
-                        <div className="text-center py-20 text-slate-400 font-medium animate-pulse">載入資料庫中...</div>
+                        <div className="text-center py-20 text-slate-400 font-medium animate-pulse">Loading...</div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                             {displayMembers.map(member => {
@@ -708,7 +739,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                     return p ? { name: p.name, isActive: mp.is_active !== false } : null;
                                 }).filter(Boolean);
 
-                                // --- 計算卡片顯示的「不可排班日」(包含手動請假與跨團隊週次) ---
                                 let safeDates = [];
                                 if (Array.isArray(settings.unavailable_dates)) safeDates = [...settings.unavailable_dates];
                                 else if (typeof settings.unavailable_dates === 'string') {
@@ -734,7 +764,6 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                     });
                                 }
                                 safeDates.sort();
-                                // -----------------------------------------------------------
 
                                 return (
                                     <div key={member.id} className="bg-white rounded-xl p-4 sm:p-6 shadow-soft border border-slate-100 hover:shadow-hover-soft hover:-translate-y-1 transition-all duration-200 relative group">
@@ -757,6 +786,15 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                                             </div>
                                             <div className={`flex gap-1.5 transition-opacity ${!isAdmin ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'}`}>
                                                 {(isAdmin || isSubmissionOpen) && <button onClick={() => openEditModal(member)} className="p-2.5 bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 rounded-lg transition-colors"><Edit2 size={16}/></button>}
+                                                {isAdmin && member.email && (
+                                                    <button 
+                                                        onClick={() => handleResetAuth(member.email, member.name)} 
+                                                        title="重設密碼"
+                                                        className="p-2.5 bg-slate-50 hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg transition-colors"
+                                                    >
+                                                        <Unlock size={16}/> 
+                                                    </button>
+                                                )}
                                                 {isAdmin && <button onClick={() => handleDelete(member.id, member.name)} className="p-2.5 bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={16}/></button>}
                                             </div>
                                         </div>
@@ -1034,7 +1072,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, supabase, utils, cons
                             </div>
                             <div className="p-5 overflow-y-auto custom-scrollbar space-y-6 flex-1 touch-pan-y overscroll-contain">
                                 <div className="bg-sky-50 p-4 rounded-xl border border-sky-100 text-sm font-normal text-sky-700 leading-relaxed">
-                                    系統內建至 2030 年的節日。手動新增節日提醒，編輯同工資料時會自動標示！
+                                    系統內建至 2030 年的節日。手動新增節日提醒，編輯同工資料時自動標示
                                 </div>
                                 <div className="space-y-3">
                                     <label className="text-xs font-medium text-slate-500 uppercase">新增節日提醒</label>

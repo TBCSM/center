@@ -6,7 +6,8 @@ import {
     ArrowLeftRight, Users, TrendingUp, CalendarDays, GitBranch, 
     Lightbulb, UserCheck, UserX, LayoutList, 
     ArrowUpDown, X, Database, AlertTriangle,
-    Home, LogOut, Edit2, Check, ShieldCheck, Undo2, Redo2
+    Home, LogOut, Edit2, Check, ShieldCheck, Undo2, Redo2,
+    ChevronDown, ChevronUp, Plus, Copy, Camera
 } from 'lucide-react';
 
 const safeParseJSON = (data, fallback) => {
@@ -15,7 +16,21 @@ const safeParseJSON = (data, fallback) => {
     try { return JSON.parse(data); } catch (e) { return fallback; }
 };
 
-const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils, constants, StatCard }) => {
+// 自訂崗位固定排序順序
+const POSITION_ORDER = ['司會', '執事輪值', '接待', '收奉獻', '主餐', 'PPT', '新朋友關懷'];
+const sortPositions = (positions) => {
+    if (!positions) return [];
+    return [...positions].sort((a, b) => {
+        const idxA = POSITION_ORDER.indexOf(a.name);
+        const idxB = POSITION_ORDER.indexOf(b.name);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+    });
+};
+
+const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, supabase, utils, constants, StatCard }) => {
     const { fetchAllData, getSundaysInQuarter, getQuarterDateRange } = utils;
     const { sessionsToSchedule } = constants;
 
@@ -39,9 +54,17 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
     const [generatedDraft, setGeneratedDraft] = useState([]);
     const [errorMsg, setErrorMsg] = useState('');
     const [showSuccessToast, setShowSuccessToast] = useState(false);
+    const [toastMessage, setToastMessage] = useState('儲存成功');
     
+    // --- 崗位與人數設定狀態 ---
+    const [isPositionsPanelOpen, setIsPositionsPanelOpen] = useState(false);
+    const [editPositions, setEditPositions] = useState([]);
+    const [isSavingPositions, setIsSavingPositions] = useState(false);
+    // -------------------------
+
     const [activeSlot, setActiveSlot] = useState(null); 
     const [searchTerm, setSearchTerm] = useState('');
+    const [globalSearchTerm, setGlobalSearchTerm] = useState(''); // 全域指派搜尋框狀態
     const [analysisSearchTerm, setAnalysisSearchTerm] = useState(''); 
     const [draggedItem, setDraggedItem] = useState(null);
     const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', currentName: '', currentDate: '', currentRole: '', newName: '', newDate: '', newRole: '', type: '', onConfirm: null });
@@ -52,11 +75,9 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
     const [selectedPersonalStats, setSelectedPersonalStats] = useState(null);
     const [hasQuerySchedule, setHasQuerySchedule] = useState(true); 
 
-    // 快速編輯 Modal 狀態
     const [quickEditData, setQuickEditData] = useState(null);
     const [isQuickEditSaving, setIsQuickEditSaving] = useState(false);
 
-    // Undo / Redo 雙堆疊狀態
     const [undoStack, setUndoStack] = useState([]);
     const [redoStack, setRedoStack] = useState([]);
 
@@ -65,12 +86,15 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             setIsLoading(true);
             try {
                 const currentQuarterStr = `${year}-Q${quarter}`;
-                const [{ data: members }, { data: positions }, { data: memberPositions }, { data: quarterSettings }] = await Promise.all([
+                const [{ data: members }, { data: rawPositions }, { data: memberPositions }, { data: quarterSettings }] = await Promise.all([
                     fetchAllData(() => supabase.from('members').select('*')),
                     fetchAllData(() => supabase.from('positions').select('*')),
                     fetchAllData(() => supabase.from('member_positions').select('*').eq('quarter', currentQuarterStr)),
                     fetchAllData(() => supabase.from('member_quarter_settings').select('*').in('quarter', [currentQuarterStr, 'SYSTEM']))
                 ]);
+                
+                const positions = sortPositions(rawPositions);
+
                 setDbData({ 
                     members: members || [], positions: positions || [], memberPositions: memberPositions || [], 
                     existingSchedules: [], memberQuarterSettings: quarterSettings || []
@@ -80,6 +104,12 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         };
         fetchInitialData(); 
     }, [year, quarter]); 
+
+    useEffect(() => {
+        if (dbData.positions && dbData.positions.length > 0) {
+            setEditPositions(dbData.positions);
+        }
+    }, [dbData.positions]);
 
     useEffect(() => {
         const checkScheduleExists = async () => {
@@ -97,6 +127,65 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
     }, [queryYear, queryQuarter, appMode]);
 
     const currentQuarterStr = `${year}-Q${quarter}`;
+
+    // --- 崗位與人數設定操作邏輯 ---
+    const handlePositionChange = (index, field, value) => {
+        const updated = [...editPositions];
+        let val = value;
+        
+        if (field === 'min_people' || field === 'max_people') {
+            val = parseInt(value) || 0;
+            if (field === 'min_people') {
+                if (val < 0) val = 0;
+                updated[index].min_people = val;
+                if (val > (updated[index].max_people || 1)) {
+                    updated[index].max_people = val; // 連動補足最大人數
+                }
+            } else {
+                if (val < 1) val = 1;
+                updated[index].max_people = val;
+                if (val < (updated[index].min_people || 0)) {
+                    updated[index].min_people = val; // 連動降低最小人數
+                }
+            }
+        } else {
+            updated[index][field] = value;
+        }
+        
+        setEditPositions(updated);
+    };
+
+    const handleSavePositions = async () => {
+        setIsSavingPositions(true);
+        try {
+            const payload = editPositions
+                .filter(p => (p.name || '').trim() !== '')
+                .map(p => {
+                    const posData = { 
+                        name: p.name.trim(), 
+                        min_people: parseInt(p.min_people) >= 0 ? parseInt(p.min_people) : 1,
+                        max_people: parseInt(p.max_people) || 1 
+                    };
+                    if (p.id) posData.id = p.id; 
+                    return posData;
+                });
+
+            const { data, error } = await supabase.from('positions').upsert(payload).select();
+            if (error) throw error;
+
+            const sortedData = sortPositions(data);
+            setDbData(prev => ({ ...prev, positions: sortedData }));
+            setIsPositionsPanelOpen(false);
+            setToastMessage('儲存成功');
+            setShowSuccessToast(true);
+            setTimeout(() => setShowSuccessToast(false), 2000);
+        } catch (err) {
+            setErrorMsg('儲存崗位失敗：' + err.message);
+        } finally {
+            setIsSavingPositions(false);
+        }
+    };
+    // -------------------------
 
     const effectiveMembers = useMemo(() => {
         const sundays = getSundaysInQuarter(currentQuarterStr) || [];
@@ -147,7 +236,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                     const params = { year, quarter, effectiveMembers, effectiveMemberPositions, dbData };
                     const draft = window.ScheduleEngine.generate(params);
                     setGeneratedDraft(draft);
-                    setUndoStack([]); // 重新生成時清空歷史
+                    setUndoStack([]); 
                     setRedoStack([]);
                 }
                 setErrorMsg('');
@@ -164,12 +253,14 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             const qY = queryYear; const qQ = queryQuarter; setYear(qY); setQuarter(qQ);
             const targetQuarter = `${qY}-Q${qQ}`;
             
-            const [{ data: mData }, { data: pData }, { data: mpData }, { data: qsData }] = await Promise.all([
+            const [{ data: mData }, { data: rawPData }, { data: mpData }, { data: qsData }] = await Promise.all([
                 fetchAllData(() => supabase.from('members').select('*')),
                 fetchAllData(() => supabase.from('positions').select('*')),
                 fetchAllData(() => supabase.from('member_positions').select('*').eq('quarter', targetQuarter)),
                 fetchAllData(() => supabase.from('member_quarter_settings').select('*').in('quarter', [targetQuarter, 'SYSTEM']))
             ]);
+
+            const pData = sortPositions(rawPData);
 
             setDbData({ 
                 members: mData || [], positions: pData || [], memberPositions: mpData || [], 
@@ -192,17 +283,16 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
 
             const reconstructed = [];
             const sundays = window.ScheduleEngine ? window.ScheduleEngine.getSundaysInQuarter(qY, qQ) : [];
-            const roleLimits = { '司會': 1, 'PPT': 1, '主餐': 2, '收奉獻': 2, '接待': 2, '新朋友關懷': 2, '執事輪值': 1 };
 
             sundays.forEach(sunday => {
                 const dateStr = window.ScheduleEngine ? window.ScheduleEngine.formatDate(sunday) : sunday.toISOString().split('T')[0];
                 sessionsToSchedule.forEach(session => {
                     (pData || []).forEach(pos => {
                         const posName = (pos.name || '').trim();
-                        if (!['司會', 'PPT', '主餐', '收奉獻', '接待', '新朋友關懷', '執事輪值'].includes(posName)) return;
+                        if (!posName) return;
                         if (posName === '主餐' && sunday.getDate() > 7) return; 
 
-                        const maxPeople = pos.max_people || roleLimits[posName] || 1;
+                        const maxPeople = pos.max_people || 1;
                         const existingForSlot = activeSchedules.filter(s => s.d === dateStr && s.s === session && s.p === posName);
 
                         existingForSlot.forEach(s => {
@@ -224,7 +314,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             });
 
             setGeneratedDraft(reconstructed); setErrorMsg('');
-            setUndoStack([]); // 載入班表時清空歷史
+            setUndoStack([]); 
             setRedoStack([]);
             if (schedulingPhase === 'setup') setActiveSessionTab('第一堂');
             setSchedulingPhase('editor');
@@ -268,7 +358,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         return { conflictIds: conflicts, orphanIds: orphans };
     }, [generatedDraft, memberGroups]);
 
-    // Undo / Redo 操作 Helper
     const saveDraftSnapshot = () => {
         setUndoStack(prev => {
             const newStack = [...prev, generatedDraft];
@@ -301,7 +390,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         if (!draggedItem) return;
         if (draggedItem.service_date !== targetDate || draggedItem.session !== targetSession || draggedItem._positionName !== targetPosName) return;
         
-        saveDraftSnapshot(); // 儲存快照
+        saveDraftSnapshot(); 
 
         setGeneratedDraft(prev => {
             const newDraft = [...prev];
@@ -317,7 +406,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
     const handleSubstitute = (newMember) => {
         if (!activeSlot || !newMember) return;
         
-        saveDraftSnapshot(); // 儲存快照
+        saveDraftSnapshot(); 
 
         setGeneratedDraft(prev => prev.map(d => {
             if (activeSlot._positionName === '執事輪值' && d.service_date === activeSlot.service_date && d._positionName === '執事輪值' && d.member_id === activeSlot.member_id) {
@@ -326,13 +415,13 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             if (d.temp_id === activeSlot.temp_id) return { ...d, member_id: newMember.id, _memberName: newMember.name, is_empty: false, is_emergency: 0 };
             return d;
         }));
-        setActiveSlot(null); setSearchTerm('');
+        setActiveSlot(null); setSearchTerm(''); setGlobalSearchTerm('');
     };
 
     const handleSwap = (newMember, targetShift) => {
         if (!activeSlot || !newMember || !targetShift) return;
         
-        saveDraftSnapshot(); // 儲存快照
+        saveDraftSnapshot(); 
 
         setGeneratedDraft(prev => prev.map(d => {
             if (activeSlot._positionName === '執事輪值') {
@@ -351,7 +440,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             }
             return d;
         }));
-        setActiveSlot(null); setSearchTerm('');
+        setActiveSlot(null); setSearchTerm(''); setGlobalSearchTerm('');
     };
 
     const requestSubstitute = (newMember) => {
@@ -378,6 +467,163 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         });
     };
 
+    // --- 全域搜尋與強制指派處理邏輯 ---
+    const handleOverrideAssign = (newMember) => {
+        const cDate = activeSlot.service_date.replace(/-/g,'/');
+        const cRole = activeSlot._positionName === '執事輪值' ? activeSlot._positionName : `${activeSlot.session}‧${activeSlot._positionName}`;
+        
+        setConfirmDialog({
+            isOpen: true, title: '⚠️ 強制指派確認', currentName: activeSlot._memberName, currentDate: cDate, currentRole: cRole,
+            newName: newMember.name, newDate: cDate, newRole: cRole, type: 'override',
+            onConfirm: () => {
+                saveDraftSnapshot();
+                setGeneratedDraft(prev => prev.map(d => {
+                    if (d.temp_id === activeSlot.temp_id) {
+                        return { 
+                            ...d, 
+                            member_id: newMember.id, 
+                            _memberName: newMember.name, 
+                            is_empty: false, 
+                            is_emergency: 1 // 標記為特殊手動指派
+                        };
+                    }
+                    return d;
+                }));
+                setActiveSlot(null); setSearchTerm(''); setGlobalSearchTerm('');
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+            }
+        });
+    };
+
+    // --- 複製通訊文案功能 ---
+    const handleCopyCoordinationText = (type, currentName, currentDate, currentRole, newName, newDate, newRole) => {
+        let text = '';
+        if (type === 'swap') {
+           text = `平安！
+
+因同工臨時有事，是否可以協調互換以下班次：
+
+📌 ${currentName}
+• ${currentDate}【${currentRole}】
+
+📌 ${newName}
+• ${newDate}【${newRole}】
+
+若同意換班，請告知，我們將協助完成換班登記
+
+謝謝你的協助！`;
+        } else {
+            text = `平安！
+
+因同工臨時有事，請問是否可以協助替補以下服事：
+
+📌 日期：${newDate}
+📌 崗位：【${newRole}】
+
+若方便協助，請告知；若不方便也沒關係，再請回覆，謝謝你。`;
+        }
+        
+        navigator.clipboard.writeText(text).then(() => {
+            setToastMessage('複製成功');
+            setShowSuccessToast(true);
+            setTimeout(() => setShowSuccessToast(false), 2000);
+        }).catch(() => {
+            setErrorMsg('複製失敗');
+            setTimeout(() => setErrorMsg(''), 3000);
+        });
+    };
+
+    // --- 原生 HTML5 Canvas 圖片下載功能 ---
+    const handleDownloadCapture = (type, currentName, currentDate, currentRole, newName, newDate, newRole) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 240; // 調整高度以符合截圖比例
+        const ctx = canvas.getContext('2d');
+
+        // 背景
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 卡片底色繪製函式
+        const drawCard = (x, y, w, h, name, date, role, title, isTarget) => {
+            // 背景卡片
+            ctx.fillStyle = '#ffffff';
+            // ctx.shadowColor = 'rgba(15, 23, 42, 0.05)';
+            // ctx.shadowBlur = 8;
+            // ctx.shadowOffsetX = 0;
+            // ctx.shadowOffsetY = 4;
+            
+            ctx.beginPath();
+            ctx.roundRect ? ctx.roundRect(x, y, w, h, 12) : ctx.rect(x, y, w, h);
+            ctx.fill();
+            // ctx.shadowColor = 'transparent';
+            
+            // 標題 (目前同工 / 支援同工)
+            ctx.fillStyle = '#64748b';
+            ctx.font = 'bold 16px "Microsoft JhengHei", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(title, x + w / 2, y + 36);
+
+            // 姓名
+            ctx.fillStyle = isTarget ? '#ea580c' : '#0f172a'; // Target is orange, source is dark slate
+            ctx.font = 'bold 32px "Microsoft JhengHei", sans-serif';
+            ctx.fillText(name, x + w / 2, y + 80);
+
+            // 日期背景與文字
+            ctx.fillStyle = '#f1f5f9';
+            const dateWidth = 110;
+            ctx.beginPath();
+            ctx.roundRect ? ctx.roundRect(x + w / 2 - dateWidth / 2, y + 104, dateWidth, 26, 6) : ctx.rect(x + w / 2 - dateWidth / 2, y + 104, dateWidth, 26);
+            ctx.fill();
+            
+            ctx.fillStyle = '#334155';
+            ctx.font = 'bold 16px "Microsoft JhengHei", sans-serif'; // 字級加大
+            ctx.textBaseline = 'middle';
+            ctx.fillText(date.replace(/-/g, '/'), x + w / 2, y + 118);
+
+            // 角色 (堂別 ‧ 崗位)
+            ctx.fillStyle = '#4f46e5'; // Indigo color for role
+            ctx.font = 'bold 15px "Microsoft JhengHei", sans-serif'; // 字級加大
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(role.replace('‧', ' • '), x + w / 2, y + 160);
+        };
+
+        // 繪製卡片底色與邊框
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#f1f5f9';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(24, 24, canvas.width - 48, canvas.height - 48, 16) : ctx.rect(24, 24, canvas.width - 48, canvas.height - 48);
+        ctx.fill();
+        ctx.stroke();
+
+        // 繪製左右兩側卡片 (調整座標以符合新版面)
+        const cardWidth = 200;
+        const cardHeight = 180;
+        const leftX = 60;
+        const rightX = canvas.width - cardWidth - 60;
+        const cardY = 24;
+
+        drawCard(leftX, cardY, cardWidth, cardHeight, currentName, currentDate, currentRole, '目前同工', false);
+        drawCard(rightX, cardY, cardWidth, cardHeight, newName, newDate, newRole, type === 'swap' ? '換班同工' : '替補同工', true);
+
+        // 中間轉換箭頭與圖標
+        ctx.fillStyle = '#f97316'; // Orange arrows
+        ctx.font = 'bold 36px "Microsoft JhengHei", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⇆', canvas.width / 2, canvas.height / 2); // 左右雙向箭頭
+
+        // 下載圖片
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `TBC服事排班調整_${newName}_${newDate.replace(/\//g,'')}.png`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const toggleQuickEditPosition = (posId) => {
         setQuickEditData(prev => {
             const currentStatus = prev.positions[posId];
@@ -389,7 +635,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         });
     };
 
-    // --- 快速編輯專用的自動編號函式 ---
     const quickEditAutoFillNextNumber = () => {
         if (!quickEditData) return;
         const existingNums = dbData.members
@@ -407,13 +652,11 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         try {
             const finalGroupId = quickEditData.groupNumber ? `${quickEditData.groupPrefix}${quickEditData.groupNumber}` : null;
             
-            // 1. 更新 members 表
             await supabase.from('members').update({ 
                 name: quickEditData.name.trim(),
                 group_id: finalGroupId
             }).eq('id', quickEditData.id);
     
-            // 2. 更新 member_quarter_settings 表
             const qsPayload = {
                 member_id: quickEditData.id,
                 quarter: currentQuarterStr,
@@ -426,7 +669,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             };
             await supabase.from('member_quarter_settings').upsert(qsPayload, { onConflict: 'member_id, quarter' });
     
-            // 3. 更新 member_positions 表 (移除 parseInt，保留原始字串以支援 UUID)
             await supabase.from('member_positions').delete().eq('member_id', quickEditData.id).eq('quarter', currentQuarterStr);
             const posKeys = Object.keys(quickEditData.positions);
             if (posKeys.length > 0) {
@@ -439,7 +681,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                 await supabase.from('member_positions').insert(insertPosPayload);
             }
     
-            // 4. 重抓資料庫更新本地 DB State
             const [{ data: members }, { data: memberPositions }, { data: quarterSettings }] = await Promise.all([
                 fetchAllData(() => supabase.from('members').select('*')),
                 fetchAllData(() => supabase.from('member_positions').select('*').eq('quarter', currentQuarterStr)),
@@ -453,7 +694,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                 memberQuarterSettings: quarterSettings || prev.memberQuarterSettings
             }));
 
-            // 5. 掃描草稿，自動退班機制 (移除 .map(Number))
             const activePositionIds = Object.keys(quickEditData.positions)
                 .filter(pid => quickEditData.positions[pid] === 'active'); 
 
@@ -462,7 +702,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                 const newDraft = prevDraft.map(shift => {
                     if (shift.member_id !== quickEditData.id || shift.is_empty) return shift;
 
-                    // 使用 String() 安全比對
                     const hasQualification = activePositionIds.some(pid => String(pid) === String(shift.position_id));
                     const isUnavailableDate = quickEditData.unavailable_dates.includes(shift.service_date);
                     const weekNum = Math.ceil(new Date(shift.service_date).getDate() / 7);
@@ -486,7 +725,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                 if (hasChanges) {
                     setTimeout(() => {
                         setErrorMsg('⚠️「人工指派」空缺未填補');
-                        setTimeout(() => setErrorMsg(''), 5000); // 5秒後自動清除錯誤訊息
+                        setTimeout(() => setErrorMsg(''), 5000); 
                     }, 500);
                 }
 
@@ -494,6 +733,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             });
     
             setQuickEditData(null);
+            setToastMessage('儲存成功');
             setShowSuccessToast(true); 
             setTimeout(() => setShowSuccessToast(false), 2000);
     
@@ -595,12 +835,36 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
     }, [recommendations, searchTerm]);
 
     const handlePublishClick = () => {
-        const hasEmpty = generatedDraft.some(d => d.is_empty);
-        if (hasEmpty) { 
-            setErrorMsg('⚠️「人工指派」空缺未填補，完成後再發布'); 
-            setTimeout(() => setErrorMsg(''), 5000); // 5秒後自動清除錯誤訊息
+        // 利用 min_people 智慧驗證空缺
+        const counts = {}; 
+        generatedDraft.forEach(d => {
+            if (d.is_empty) return;
+            const key = `${d.service_date}_${d.session}_${d.position_id}`;
+            counts[key] = (counts[key] || 0) + 1;
+        });
+
+        const expectedKeys = new Set();
+        generatedDraft.forEach(d => { expectedKeys.add(`${d.service_date}_${d.session}_${d.position_id}`); });
+
+        let unmetMin = false;
+        for (let key of expectedKeys) {
+            const parts = key.split('_');
+            const posId = parts[2];
+            const pos = dbData.positions.find(p => p.id == posId);
+            const min = pos?.min_people !== undefined ? pos.min_people : 1;
+            const filled = counts[key] || 0;
+            if (filled < min) {
+                unmetMin = true;
+                break;
+            }
+        }
+
+        if (unmetMin) { 
+            setErrorMsg('⚠️ 尚未達到崗位「最少」需求人數，請補齊後再發布'); 
+            setTimeout(() => setErrorMsg(''), 5000); 
             return; 
         }
+
         setPublishConfirmOpen(true);
     };
 
@@ -623,6 +887,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             }, { onConflict: 'member_id, quarter' });
 
             if (qsErr) throw qsErr;
+            setToastMessage('儲存成功');
             setShowSuccessToast(true); setTimeout(() => setShowSuccessToast(false), 3000);
         } catch (err) { setErrorMsg('儲存失敗：' + err.message); } 
         finally { setIsSaving(false); }
@@ -647,29 +912,39 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             return a.date.localeCompare(b.date);
         });
 
-        let csvContent = '\uFEFF日期,堂別,司會,執事,接待,收奉獻,主餐,PPT,新朋友關懷\n';
+        // 這裡改用安全的字串組合方式，避免轉譯器出錯
+        const headerRow = "\uFEFF日期,堂別," + dbData.positions.map(p => p.name).join(',') + "\n";
+        let csvContent = headerRow;
+        
         sortedRows.forEach(row => {
-            const r = [
-                row.date, row.session,
-                (row.positions['司會'] || []).join('、'), (row.positions['執事輪值'] || []).join('、'),
-                (row.positions['接待'] || []).join('、'), (row.positions['收奉獻'] || []).join('、'),
-                (row.positions['主餐'] || []).join('、'), (row.positions['PPT'] || []).join('、'),
-                (row.positions['新朋友關懷'] || []).join('、')
-            ];
-            csvContent += r.map(v => `"${v}"`).join(',') + '\n';
+            const r = [row.date, row.session];
+            dbData.positions.forEach(pos => {
+                r.push((row.positions[pos.name] || []).join('、'));
+            });
+            // 確保換行符號不會被斷開
+            csvContent += r.map(v => `"${v}"`).join(',') + "\n";
         });
+        
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `TBC_排班表_${year}Q${quarter}.csv`;
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        const link = document.createElement('a'); 
+        link.href = URL.createObjectURL(blob); 
+        link.download = `TBC_排班表_${year}Q${quarter}.csv`;
+        document.body.appendChild(link); 
+        link.click(); 
+        document.body.removeChild(link);
     };
 
     const dashboardData = useMemo(() => {
         const memberStats = {};
+        const emptyRoles = {};
+        dbData.positions.forEach(p => emptyRoles[p.name] = 0);
+
         effectiveMembers.forEach(m => {
             const status = (m.availability_status || '').trim();
             if (status === '暫停服事' || status === '安息季') return;
-            memberStats[m.id] = { id: m.id, name: m.name, group: m.group_id, totalService: 0, attendanceDates: new Set(), roles: { '司會': 0, '執事輪值': 0, '接待': 0, '收奉獻': 0, '主餐': 0, 'PPT': 0, '新朋友關懷': 0 } };
+            memberStats[m.id] = { id: m.id, name: m.name, group: m.group_id, totalService: 0, attendanceDates: new Set(), roles: { ...emptyRoles } };
         });
+        
         generatedDraft.forEach(d => {
             if (d.is_empty || !memberStats[d.member_id]) return;
             const stats = memberStats[d.member_id];
@@ -677,8 +952,9 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             stats.totalService += 1;
             if (d._positionName && stats.roles[d._positionName] !== undefined) stats.roles[d._positionName] += 1;
         });
+        
         return Object.values(memberStats).map(d => ({ ...d, attendance: d.attendanceDates.size, distinctRolesCount: Object.values(d.roles).filter(c => c > 0).length, healthScore: 0 })); 
-    }, [generatedDraft, effectiveMembers]);
+    }, [generatedDraft, effectiveMembers, dbData.positions]);
 
     const dashboardStats = useMemo(() => {
         if (!dashboardData || dashboardData.length === 0) return null;
@@ -734,6 +1010,78 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
         let direction = 'desc'; if (sortConfig.key === key && sortConfig.direction === 'desc') direction = 'asc';
         setSortConfig({ key, direction });
     };
+
+    const renderPositionSettingsPanel = () => (
+        <div className="mb-8 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+            <button 
+                onClick={() => setIsPositionsPanelOpen(!isPositionsPanelOpen)}
+                className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors focus:outline-none"
+            >
+                <div className="flex items-center gap-2 font-bold text-slate-700">
+                    <ShieldCheck size={18} className="text-indigo-500" />
+                    崗位人數設定
+                </div>
+                {isPositionsPanelOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
+            </button>
+            
+            {isPositionsPanelOpen && (
+                <div className="p-5 border-t border-slate-200 bg-white animate-fade-in space-y-4">
+                    {/* 表頭區塊 */}
+                    <div className="flex items-center gap-3 px-2 pb-2 border-b border-slate-100">
+                        <div className="flex-1 text-[13px] font-bold text-slate-500 pl-1">崗位</div>
+                        <div className="flex items-center gap-4 shrink-0 text-center pr-1">
+                            <div className="w-14 text-[13px] font-bold text-slate-500">最少</div>
+                            <div className="w-14 text-[13px] font-bold text-slate-500">最多</div>
+                        </div>
+                    </div>
+                    
+                    {/* 崗位清單 */}
+                    <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar px-1">
+                        {editPositions.map((pos, idx) => {
+                            // 隱藏固定不需調整的崗位
+                            if (['司會', '執事輪值', 'PPT'].includes(pos.name)) return null;
+                            
+                            return (
+                                <div key={pos.id || pos.temp_id} className="flex items-center gap-3">
+                                    <div className="flex-1 px-3 py-2 text-sm font-bold text-slate-700 bg-slate-50 border border-slate-100 rounded-lg select-none">
+                                        {pos.name}
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <input 
+                                            type="number" 
+                                            min="0"
+                                            value={pos.min_people !== undefined ? pos.min_people : 1} 
+                                            onChange={e => handlePositionChange(idx, 'min_people', e.target.value)}
+                                            className="w-16 bg-white border border-slate-200 rounded-lg py-2 text-center text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 shadow-sm transition-colors"
+                                        />
+                                        <input 
+                                            type="number" 
+                                            min="1"
+                                            value={pos.max_people !== undefined ? pos.max_people : 1} 
+                                            onChange={e => handlePositionChange(idx, 'max_people', e.target.value)}
+                                            className="w-16 bg-white border border-slate-200 rounded-lg py-2 text-center text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 shadow-sm transition-colors"
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* 儲存按鈕置底 */}
+                    <div className="pt-5 border-t border-slate-100 flex justify-center">
+                        <button 
+                            onClick={handleSavePositions} 
+                            disabled={isSavingPositions}
+                            className="w-full sm:w-auto bg-slate-900 text-white px-10 py-3 rounded-xl text-sm font-medium hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm hover:shadow active:scale-95"
+                        >
+                            {isSavingPositions ? <RefreshCw className="animate-spin" size={18}/> : <Save size={18}/>}
+                            儲存
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 
     const renderOriginalDataAnalysis = () => {
         if (!dashboardStats) return (
@@ -808,8 +1156,8 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                     <th onClick={() => requestSort('name')} className="py-4 px-4 font-medium text-slate-500 text-sm whitespace-nowrap pl-8 border-b border-slate-100 cursor-pointer hover:bg-slate-50 select-none">姓名 <ArrowUpDown size={14} className="inline ml-1 opacity-40"/></th>
                                     <th onClick={() => requestSort('totalService')} className="py-4 px-4 font-medium text-slate-500 text-sm whitespace-nowrap border-b border-slate-100 text-center cursor-pointer hover:bg-slate-50">服事次數 <ArrowUpDown size={14} className="inline ml-1 opacity-40"/></th>
                                     <th onClick={() => requestSort('attendance')} className="py-4 px-4 font-medium text-slate-500 text-sm whitespace-nowrap border-b border-slate-100 text-center cursor-pointer hover:bg-slate-50">出席天數 <ArrowUpDown size={14} className="inline ml-1 opacity-40"/></th>
-                                    {['司會', '執事輪值', '接待', '收奉獻', '主餐', 'PPT', '新朋友關懷'].map(role => (
-                                        <th key={role} onClick={() => requestSort(role)} className="py-4 px-4 font-medium text-slate-500 text-sm whitespace-nowrap border-b border-slate-100 text-center cursor-pointer hover:bg-slate-50">{role} <ArrowUpDown size={14} className="inline ml-1 opacity-40"/></th>
+                                    {dbData.positions.map(pos => (
+                                        <th key={pos.id} onClick={() => requestSort(pos.name)} className="py-4 px-4 font-medium text-slate-500 text-sm whitespace-nowrap border-b border-slate-100 text-center cursor-pointer hover:bg-slate-50">{pos.name} <ArrowUpDown size={14} className="inline ml-1 opacity-40"/></th>
                                     ))}
                                 </tr>
                             </thead>
@@ -819,8 +1167,8 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                         <td className="py-3 px-4 pl-8 whitespace-nowrap"><p className="font-bold text-slate-900 text-base">{d.name}</p></td>
                                         <td className="py-3 px-4 text-center font-bold text-indigo-600 bg-indigo-50/30">{d.totalService}</td>
                                         <td className="py-3 px-4 text-center font-medium text-slate-600">{d.attendance}</td>
-                                        {['司會', '執事輪值', '接待', '收奉獻', '主餐', 'PPT', '新朋友關懷'].map(role => (
-                                            <td key={role} className="py-3 px-4 text-center font-normal text-slate-400">{d.roles[role] || '-'}</td>
+                                        {dbData.positions.map(pos => (
+                                            <td key={pos.id} className="py-3 px-4 text-center font-normal text-slate-400">{d.roles[pos.name] || '-'}</td>
                                         ))}
                                     </tr>
                                 ))}
@@ -849,18 +1197,22 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
 
     const renderSchedulingView = () => {
         return (
-            <div className="flex-1 flex items-center justify-center bg-slate-50 p-6 animate-fade-in overflow-y-auto">
-                <div className="w-full max-w-xl bg-white p-10 lg:p-12 rounded-2xl shadow-soft border border-slate-100 relative">
+            <div className="flex-1 flex flex-col items-center justify-start bg-slate-50 p-6 animate-fade-in overflow-y-auto">
+                <div className="w-full max-w-xl bg-white p-10 lg:p-12 rounded-2xl shadow-soft border border-slate-100 relative mt-8">
                     <div className="flex bg-slate-100 p-1.5 rounded-xl mb-8">
                         <button onClick={() => setAppMode('schedule')} className={`flex-1 py-3.5 flex items-center justify-center gap-2 text-sm font-medium rounded-lg transition-all ${appMode === 'schedule' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200/50'}`}><Play size={18} /> 預排作業</button>
                         <button onClick={() => setAppMode('query')} className={`flex-1 py-3.5 flex items-center justify-center gap-2 text-sm font-medium rounded-lg transition-all ${appMode === 'query' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200/50'}`}><Search size={18} /> 編輯班表</button>
                     </div>
                     {appMode === 'schedule' ? (
                         <div className="animate-fade-in">
-                            <div className="grid grid-cols-2 gap-6 mb-10">
+                            <div className="grid grid-cols-2 gap-6 mb-8">
                                 <div className="space-y-2"><label className="text-xs font-medium text-slate-500 ml-2">年份</label><input type="number" value={year} onChange={e => setYear(parseInt(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-6 py-4 font-normal text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all" /></div>
                                 <div className="space-y-2"><label className="text-xs font-medium text-slate-500 ml-2">季度</label><select value={quarter} onChange={e => setQuarter(parseInt(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-6 py-4 font-normal text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"><option value={1}>Q1 (1-3月)</option><option value={2}>Q2 (4-6月)</option><option value={3}>Q3 (7-9月)</option><option value={4}>Q4 (10-12月)</option></select></div>
                             </div>
+                            
+                            {/* --- 無所不在的崗位設定面板 --- */}
+                            {renderPositionSettingsPanel()}
+
                             <button onClick={runAutoSchedule} disabled={isLoading} className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white font-medium py-4 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-button hover:-translate-y-0.5">{isLoading ? <RefreshCw className="animate-spin" /> : <><Play size={20} fill="currentColor"/> 建立新班表</>}</button>
                             {!dbData.memberQuarterSettings.some(s => s.quarter === `${year}-Q${quarter}`) && !isLoading && (
                                 <p className="text-rose-500 text-[13px] font-medium text-center mt-4 flex items-center justify-center gap-1.5 animate-pulse"><AlertCircle size={16} /> 尚未建立 {year}Q{quarter} 同工資料，請至「同工資料中心」新增。</p>
@@ -868,10 +1220,14 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                         </div>
                     ) : (
                         <div className="animate-fade-in">
-                            <div className="grid grid-cols-2 gap-6 mb-10">
+                            <div className="grid grid-cols-2 gap-6 mb-8">
                                 <div className="space-y-2"><label className="text-xs font-medium text-slate-500 ml-2">年份</label><input type="number" value={queryYear} onChange={e => setQueryYear(parseInt(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-6 py-4 font-normal text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all" /></div>
                                 <div className="space-y-2"><label className="text-xs font-medium text-slate-500 ml-2">季度</label><select value={queryQuarter} onChange={e => setQueryQuarter(parseInt(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-6 py-4 font-normal text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"><option value={1}>Q1 (1-3月)</option><option value={2}>Q2 (4-6月)</option><option value={3}>Q3 (7-9月)</option><option value={4}>Q4 (10-12月)</option></select></div>
                             </div>
+                            
+                            {/* --- 無所不在的崗位設定面板 --- */}
+                            {renderPositionSettingsPanel()}
+
                             <button onClick={runQuerySchedule} disabled={isLoading} className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95 disabled:from-indigo-300 disabled:to-violet-300 text-white font-medium py-4 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-button hover:-translate-y-0.5">{isLoading ? <RefreshCw className="animate-spin" /> : <><Search size={20} strokeWidth={3}/> 開始編輯</>}</button>
                             {!hasQuerySchedule && !isLoading && (
                                 <p className="text-rose-500 text-[13px] font-medium text-center mt-4 flex items-center justify-center gap-1.5 animate-pulse"><AlertCircle size={16} /> 尚未建立 {queryYear}Q{queryQuarter} 排班資料，請至「預排作業」新增。</p>
@@ -889,7 +1245,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             <div className="w-full lg:w-[400px] xl:w-[450px] shrink-0 bg-white border-l border-slate-200 overflow-hidden h-full flex flex-col shadow-soft z-20 animate-panel-right relative">
                 <div className="bg-slate-900 px-5 py-4 rounded-b-[1.25rem] shadow-sm border-b border-slate-800 relative z-20 shrink-0 overflow-hidden">
                     <div className="absolute top-[-20%] right-[-10%] w-40 h-40 rounded-full bg-violet-600/30 blur-3xl pointer-events-none"></div>
-                    <button onClick={() => { setActiveSlot(null); setSearchTerm(''); }} className="absolute right-4 top-4 z-50 p-1.5 rounded-lg text-slate-300 transition-colors duration-75 hover:bg-white/20 hover:text-white cursor-pointer active:scale-95"><X size={18}/></button>
+                    <button onClick={() => { setActiveSlot(null); setSearchTerm(''); setGlobalSearchTerm(''); }} className="absolute right-4 top-4 z-50 p-1.5 rounded-lg text-slate-300 transition-colors duration-75 hover:bg-white/20 hover:text-white cursor-pointer active:scale-95"><X size={18}/></button>
                     
                     <div className="flex items-center gap-2.5 relative z-10 pr-6">
                         <div className={`p-2 rounded-lg shrink-0 ${activeSlot.is_empty ? 'bg-rose-500/20 text-rose-300' : 'bg-white/10 text-indigo-300'}`}>
@@ -952,18 +1308,23 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                         </div>
                     </div>
                 </div>
-                <div className="px-6 pt-5 pb-2 bg-white z-10 sticky top-0 shrink-0">
+
+                {/* 搜尋過濾控制區塊 */}
+                <div className="px-6 pt-5 pb-2 bg-white z-10 sticky top-0 shrink-0 border-b border-slate-100">
                     <div className="relative">
                         <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input type="text" placeholder="搜尋姓名或崗位" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-11 pr-10 py-2.5 text-sm font-normal text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white transition-all shadow-inner" />
+                        <input type="text" placeholder="搜尋推薦人選姓名或崗位" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-11 pr-10 py-2.5 text-sm font-normal text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white transition-all shadow-inner" />
                         {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:bg-slate-200 rounded-md transition-all"><X size={14} /></button>}
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6 pt-2 space-y-4">
+
+                {/* 推薦清單與全域強制指派區塊 */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6 pt-4 space-y-5 bg-slate-50/40">
                     <div className="flex items-center justify-between px-1"><h3 className="font-bold text-slate-900 flex items-center gap-2 text-sm"><UserCheck className="text-emerald-500" size={16}/> 推薦人選 ({finalRecommendations.length})</h3><span className="text-[12px] bg-slate-100 text-slate-500 px-2 py-1 rounded-md font-medium">依本季次數排序</span></div>
+                    
                     {finalRecommendations.length > 0 ? (
                         finalRecommendations.map((c, idx) => (
-                            <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-soft hover:-translate-y-0.5">
+                            <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-soft hover:-translate-y-0.5 bg-white">
                                 <div className="flex items-center gap-3">
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shadow-sm text-xs ${idx < 3 && !searchTerm ? 'bg-gradient-to-br from-emerald-400 to-emerald-600' : 'bg-slate-300'}`}>{idx + 1}</div>
                                     <div>
@@ -984,7 +1345,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                             <div className="flex flex-col gap-2">
                                                 {c.swapOptions.map((swap, i) => (
                                                     <div key={i} className="flex items-center justify-between bg-indigo-50/50 text-indigo-800 px-2.5 py-1.5 rounded-lg border border-indigo-100">
-                                                        <div className="text-sm font-bold text-indigo-950">
+                                                        <div className="text-sm font-bold text-indigo-950 flex-1">
                                                             {swap.service_date}
                                                             <span className="text-slate-600 ml-1">({swap._positionName}{swap._positionName !== '執事輪值' ? ` • ${swap.session}` : ''})</span>
                                                         </div>
@@ -1007,11 +1368,68 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                             </div>
                         ))
                     ) : (
-                        <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                            <UserX className="mx-auto mb-3 opacity-30" size={32} />
-                            <p className="font-medium text-sm">{searchTerm ? '找不到符合條件的人選' : '找不到合適人選'}</p>
+                        <div className="p-6 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200 shadow-sm">
+                            <UserX className="mx-auto mb-2 opacity-30" size={28} />
+                            <p className="font-medium text-sm">無合適推薦人選</p>
                         </div>
                     )}
+
+                    {/* --- 解法二：全域搜尋與強制指派 (Override) UI 機制 --- */}
+                    <div className="pt-4 border-t border-slate-200">
+                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 shadow-sm">
+                            <h4 className="text-sm font-bold text-orange-800 flex items-center gap-1.5 mb-2">
+                                <AlertTriangle size={16} className="text-orange-600" />
+                                強制人工指派 (無視排班規則限制)
+                            </h4>
+                            <p className="text-xs text-orange-600 mb-3 font-normal leading-relaxed">
+                                無推薦人選時，搜尋全體同工進行人工指派，完全忽略請假與崗位技能
+                            </p>
+                            <div className="relative">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" />
+                                <input 
+                                    type="text" 
+                                    placeholder="搜尋全體同工姓名" 
+                                    value={globalSearchTerm}
+                                    onChange={(e) => setGlobalSearchTerm(e.target.value)}
+                                    className="w-full bg-white border border-orange-200 rounded-lg pl-9 pr-8 py-2 text-sm font-normal text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/30 transition-all placeholder-orange-300"
+                                />
+                                {globalSearchTerm && (
+                                    <button onClick={() => setGlobalSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-orange-400 hover:bg-orange-100 rounded-md"><X size={14} /></button>
+                                )}
+                            </div>
+                            
+                            {/* 全域搜尋結果清單 */}
+                            {globalSearchTerm && (
+                                <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar bg-white rounded-lg border border-orange-100 p-2 animate-fade-in">
+                                    {effectiveMembers
+                                        .filter(m => m.name && String(m.name).toLowerCase().includes(String(globalSearchTerm).toLowerCase()) && m.id !== activeSlot.member_id)
+                                        .sort((a, b) => (currentUsageCount[a.id] || 0) - (currentUsageCount[b.id] || 0)) // 依照服事次數排序 (少到多)
+                                        .map(m => {
+                                            const usage = currentUsageCount[m.id] || 0;
+                                            return (
+                                                <div key={m.id} className="flex items-center justify-between bg-slate-50 hover:bg-orange-50/40 p-2 rounded border border-slate-100 transition-colors">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-bold text-slate-800">{m.name}</span>
+                                                        <span className="text-[11px] text-slate-400">本季服事 {usage} 次 ‧ {m.availability_status}</span>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleOverrideAssign(m)}
+                                                        className="px-3 py-1.5 bg-orange-600 text-white hover:bg-orange-700 rounded-md text-xs font-bold transition-all shadow-sm flex items-center gap-1 active:scale-95"
+                                                    >
+                                                        <Plus size={12} strokeWidth={3} />
+                                                        強制人工指派
+                                                    </button>
+                                                </div>
+                                            );
+                                        })
+                                    }
+                                    {effectiveMembers.filter(m => m.name.toLowerCase().includes(globalSearchTerm.toLowerCase()) && m.id !== activeSlot.member_id).length === 0 && (
+                                        <p className="text-center text-xs text-slate-400 py-3 font-medium">查無資料</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
         );
@@ -1055,7 +1473,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
             <td>
                 <div className={`${gridClass} min-h-[34px] w-max mx-auto`}>
                     {items.map((item, i) => (
-                        <div key={item.temp_id} draggable={!item.is_empty} onDragStart={(e) => handleDragStart(e, item)} onDragEnd={handleDragEnd} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, row.date, row.session, positionName, i)} onClick={() => { setActiveSlot(item); setSearchTerm(''); }} className={getTagClass(item)}>{item._memberName || '未知'}</div>
+                        <div key={item.temp_id} draggable={!item.is_empty} onDragStart={(e) => handleDragStart(e, item)} onDragEnd={handleDragEnd} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, row.date, row.session, positionName, i)} onClick={() => { setActiveSlot(item); setSearchTerm(''); setGlobalSearchTerm(''); }} className={getTagClass(item)}>{item._memberName || '未知'}</div>
                     ))}
                 </div>
             </td>
@@ -1071,9 +1489,13 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                         <button onClick={goBack} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group"><Home size={18} className="text-slate-400 group-hover:text-indigo-400 transition-colors" /><span>Home</span></button>
                         <button onClick={goToMembers} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group"><Users size={18} className="text-slate-400 group-hover:text-violet-400 transition-colors" /><span>同工資料中心</span></button>
                         <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-medium text-sm shadow-button"><Calendar size={18} /><span>排班作業中心</span></div>
+                        <button onClick={goToInsights} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group">
+                            <BarChart3 size={18} className="text-slate-400 group-hover:text-sky-400 transition-colors" />
+                            <span>人力洞察中心</span>
+                        </button>
                     </nav>
                 </div>
-                <div className="p-4 border-t border-slate-800"><button onClick={async () => { if (supabase?.auth?.signOut) { await supabase.auth.signOut(); } window.location.reload(); }} className="w-full flex items-center gap-3 px-4 py-3 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl font-normal text-sm transition-all text-left group"><LogOut size={18} className="text-rose-400 group-hover:translate-x-0.5 transition-transform" /><span>Sign Out</span></button></div>
+                <div className="p-4 border-t border-slate-800"><button onClick={async () => { if (supabase?.auth?.signOut) { await supabase.auth.signOut(); } window.location.reload(); }} className="w-full flex items-center gap-3 px-4 py-3 text-rose-400 hover:text-rose-300 hover:bg-rose-50/10 rounded-xl font-normal text-sm transition-all text-left group"><LogOut size={18} className="text-rose-400 group-hover:translate-x-0.5 transition-transform" /><span>Sign Out</span></button></div>
             </div>
 
             <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 relative">
@@ -1081,7 +1503,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                     <div className="flex flex-col justify-center">
                         <div className="flex items-center gap-3">
                             <h2 className="text-2xl font-extrabold text-slate-900 flex items-center gap-3 tracking-tight">
-                                {schedulingPhase === 'setup' ? (<><Calendar className="text-violet-600" size={28}/> 排班作業中心</>) : (<div className="flex items-center gap-2"><button onClick={() => { setSchedulingPhase('setup'); setActiveSlot(null); }} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="返回設定"><ChevronLeft size={20} /></button><span>{year}Q{quarter} {appMode === 'schedule' ? '預排預覽' : '編輯預覽'}</span></div>)}
+                                {schedulingPhase === 'setup' ? (<><Calendar className="text-violet-600" size={28}/> 排班作業中心</>) : (<div className="flex items-center gap-2"><button onClick={() => { setSchedulingPhase('setup'); setActiveSlot(null); setGlobalSearchTerm(''); }} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="返回設定"><ChevronLeft size={20} /></button><span>{year}Q{quarter} {appMode === 'schedule' ? '預排預覽' : '編輯預覽'}</span></div>)}
                             </h2>
                         </div>
                         {schedulingPhase === 'editor' && (
@@ -1090,7 +1512,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                 <div className="flex gap-3 mt-2 pt-2 border-t border-slate-100 flex-wrap">
                                     <p className="text-rose-600 text-[10px] font-bold flex items-center gap-1.5 bg-rose-50 px-2 py-1 rounded"><span className="w-2 h-2 rounded-full bg-rose-500"></span> 紅色：崗位兼任</p>
                                     <p className="text-sky-600 text-[10px] font-bold flex items-center gap-1.5 bg-sky-50 px-2 py-1 rounded"><span className="w-2 h-2 rounded-full bg-sky-500"></span> 藍色：群組落單</p>
-                                    {appMode === 'schedule' && <p className="text-orange-600 text-[10px] font-bold flex items-center gap-1.5 bg-orange-50 px-2 py-1 rounded"><span className="w-2 h-2 rounded-full bg-orange-500"></span> 橘色：落單自動替換</p>}
+                                    {appMode === 'schedule' && <p className="text-orange-600 text-[10px] font-bold flex items-center gap-1.5 bg-orange-50 px-2 py-1 rounded"><span className="w-2 h-2 rounded-full bg-orange-500"></span> 橘色：落單自動替換 / 強制人工指派</p>}
                                 </div>
                             </>
                         )}
@@ -1100,7 +1522,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                             <div className="flex items-center gap-3 flex-wrap justify-end">
                                 <div className="flex bg-slate-50 p-1.5 rounded-lg w-full md:w-auto overflow-x-auto custom-scrollbar border border-slate-200">
                                     {['第一堂', '第二堂', '📊 數據分析'].map(tab => (
-                                        <button key={tab} onClick={() => { setActiveSessionTab(tab); if(tab === '📊 數據分析') setActiveSlot(null); }} className={`px-5 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeSessionTab === tab ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>{tab}</button>
+                                        <button key={tab} onClick={() => { setActiveSessionTab(tab); if(tab === '📊 數據分析') { setActiveSlot(null); setGlobalSearchTerm(''); } }} className={`px-5 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeSessionTab === tab ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>{tab}</button>
                                     ))}
                                     {appMode === 'schedule' && (
                                         <><div className="w-px h-6 bg-slate-200 mx-2 self-center"></div><button onClick={runAutoSchedule} disabled={isLoading} className="px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap text-indigo-600 hover:bg-white hover:shadow-sm flex items-center gap-1.5"><RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> 重新排班</button></>
@@ -1142,8 +1564,9 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                             <thead>
                                                 <tr>
                                                     <th className="sticky left-0 z-20 bg-slate-100/95 backdrop-blur whitespace-nowrap text-center px-4 w-[110px] font-medium">日期</th>
-                                                    <th className="whitespace-nowrap font-medium">司會</th><th className="whitespace-nowrap font-medium">執事</th><th className="whitespace-nowrap font-medium">接待</th>
-                                                    <th className="whitespace-nowrap font-medium">收奉獻</th><th className="whitespace-nowrap font-medium">主餐</th><th className="whitespace-nowrap font-medium">PPT</th><th className="whitespace-nowrap font-medium">新朋友關懷</th>
+                                                    {dbData.positions.map(pos => (
+                                                        <th key={pos.id} className="whitespace-nowrap font-medium">{pos.name}</th>
+                                                    ))}
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1153,12 +1576,13 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                                         return (
                                                             <tr key={idx} className={rowBg}>
                                                                 <td className={`sticky left-0 z-10 font-medium text-slate-500 text-center whitespace-nowrap px-4 backdrop-blur-sm border-r border-slate-100 ${stickyBg}`}>{row.date}</td>
-                                                                <ScheduleCell row={row} positionName="司會" /><ScheduleCell row={row} positionName="執事輪值" /><ScheduleCell row={row} positionName="接待" gridCols={2} />
-                                                                <ScheduleCell row={row} positionName="收奉獻" gridCols={2} /><ScheduleCell row={row} positionName="主餐" gridCols={2} /><ScheduleCell row={row} positionName="PPT" /><ScheduleCell row={row} positionName="新朋友關懷" gridCols={2} />
+                                                                {dbData.positions.map(pos => (
+                                                                    <ScheduleCell key={pos.id} row={row} positionName={pos.name} gridCols={pos.max_people > 1 ? 2 : 1} />
+                                                                ))}
                                                             </tr>
                                                         );
                                                     })
-                                                ) : (<tr><td colSpan="8" className="text-center py-16 text-slate-400 font-medium bg-white">此堂別尚無排班資料</td></tr>)}
+                                                ) : (<tr><td colSpan={dbData.positions.length + 1} className="text-center py-16 text-slate-400 font-medium bg-white">此堂別尚無排班資料</td></tr>)}
                                             </tbody>
                                         </table>
                                     </div>
@@ -1170,27 +1594,59 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                 </div>
 
                 {errorMsg && <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-50 text-red-600 px-6 py-3 rounded-lg flex items-center gap-3 font-medium border border-red-100 shadow-xl animate-bounce"><AlertCircle size={20} /> {errorMsg}</div>}
-                {showSuccessToast && <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[200] bg-emerald-50 text-emerald-600 px-8 py-5 rounded-2xl flex items-center gap-4 font-bold text-xl border-2 border-emerald-200 shadow-glow animate-pop"><CheckCircle2 size={32} className="text-emerald-500" /> 發布成功</div>}
+                {showSuccessToast && <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[300] bg-emerald-50 text-emerald-600 px-8 py-5 rounded-2xl flex items-center gap-4 font-bold text-xl border-2 border-emerald-200 shadow-glow animate-pop"><CheckCircle2 size={32} className="text-emerald-500" /> {toastMessage}</div>}
                 
+                {/* 異動確認對話框 (整合複製文案與下載截圖功能) */}
                 {confirmDialog.isOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
                         <div className="bg-white rounded-2xl p-6 md:p-8 max-w-md w-full shadow-hover-soft animate-pop border border-slate-100">
-                            <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">{confirmDialog.type === 'swap' ? <RefreshCw className="text-indigo-500" /> : <HandHeart className="text-orange-500" />}{confirmDialog.title}</h3>
-                            <div className="mb-8 p-4 sm:p-5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-2 sm:gap-4 shadow-inner">
-                                <div className="flex-1 text-center break-words"><p className="text-xs sm:text-sm font-semibold text-slate-500 mb-1.5">目前同工</p><p className="text-lg sm:text-xl font-semibold text-slate-900">{confirmDialog.currentName}</p><div className="text-sm font-bold text-slate-600 mt-2 space-y-0.5"><p className="bg-slate-200/60 rounded py-0.5 px-1 inline-block">{confirmDialog.currentDate}</p><p className="text-indigo-700">{confirmDialog.currentRole}</p></div></div>
+                            <h3 className="text-xl font-bold text-slate-900 mb-5 flex items-center gap-2">
+                                {confirmDialog.type === 'override' ? <AlertTriangle className="text-orange-500" /> : confirmDialog.type === 'swap' ? <RefreshCw className="text-indigo-500" /> : <HandHeart className="text-orange-500" />}
+                                {confirmDialog.title}
+                            </h3>
+                            <div className="mb-5 p-4 sm:p-5 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center justify-between gap-2 sm:gap-4 shadow-inner">
+                                <div className="flex-1 text-center break-words"><p className="text-xs sm:text-sm font-semibold text-slate-500 mb-1.5">目前同工</p><p className="text-lg sm:text-xl font-semibold text-slate-900">{confirmDialog.currentName}</p><div className="text-sm font-bold text-slate-600 mt-2 space-y-0.5"><p className="bg-slate-200/60 rounded py-0.5 px-1 inline-block text-xs">{confirmDialog.currentDate}</p><p className="text-indigo-700 text-xs">{confirmDialog.currentRole}</p></div></div>
                                 <div className="shrink-0 text-slate-300 px-1"><ArrowLeftRight size={20} className={`sm:w-6 sm:h-6 ${confirmDialog.type === 'swap' ? 'text-indigo-400' : 'text-orange-400'}`} strokeWidth={2.5} /></div>
-                                <div className="flex-1 text-center break-words"><p className="text-xs sm:text-sm font-semibold text-slate-500 mb-1.5">替換同工</p><p className={`text-lg sm:text-xl font-semibold ${confirmDialog.type === 'swap' ? 'text-indigo-600' : 'text-orange-600'}`}>{confirmDialog.newName}</p><div className="text-sm font-bold text-slate-600 mt-2 space-y-0.5"><p className="bg-slate-200/60 rounded py-0.5 px-1 inline-block">{confirmDialog.newDate}</p><p className="text-indigo-700">{confirmDialog.newRole}</p></div></div>
+                                <div className="flex-1 text-center break-words"><p className="text-xs sm:text-sm font-semibold text-slate-500 mb-1.5">{confirmDialog.type === 'swap' ? '換班同工' : '替補同工'}</p><p className={`text-lg sm:text-xl font-semibold ${confirmDialog.type === 'swap' ? 'text-indigo-600' : 'text-orange-600'}`}>{confirmDialog.newName}</p><div className="text-sm font-bold text-slate-600 mt-2 space-y-0.5"><p className="bg-slate-200/60 rounded py-0.5 px-1 inline-block text-xs">{confirmDialog.newDate}</p><p className="text-indigo-700 text-xs">{confirmDialog.newRole}</p></div></div>
                             </div>
+
+                            {/* 同工與管理員專屬通訊輔助區塊 */}
+                            <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 mb-6 flex flex-col gap-2 shadow-sm">
+                               <div className="grid grid-cols-2 gap-2">
+                                    {/* 複製按鈕 */}
+                                <button 
+    type="button"
+    onClick={() => handleCopyCoordinationText(confirmDialog.type, confirmDialog.currentName, confirmDialog.currentDate, confirmDialog.currentRole, confirmDialog.newName, confirmDialog.newDate, confirmDialog.newRole)}
+    className="py-2.5 px-3 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors active:scale-95"
+>
+    {/* 將 Copy 換成原本就有的 Check */}
+    <Check size={14} className="text-indigo-500" />
+    複製
+</button>
+
+{/* 下載按鈕 */}
+<button 
+    type="button"
+    onClick={() => handleDownloadCapture(confirmDialog.type, confirmDialog.currentName, confirmDialog.currentDate, confirmDialog.currentRole, confirmDialog.newName, confirmDialog.newDate, confirmDialog.newRole)}
+    className="py-2.5 px-3 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors active:scale-95"
+>
+    {/* 將 Camera 換成原本就有的 Download */}
+    <Download size={14} className="text-violet-500" />
+    截圖
+</button>
+                                </div>
+                            </div>
+
                             <div className="flex gap-3">
-                                <button onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} className="flex-1 py-3 px-4 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium rounded-lg transition-colors">取消</button>
-                                <button onClick={confirmDialog.onConfirm} className={`flex-1 py-3 px-4 font-medium text-white rounded-lg transition-all duration-200 shadow-button hover:-translate-y-0.5 active:scale-95 ${confirmDialog.type === 'swap' ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-gradient-to-r from-orange-500 to-amber-500'}`}>確認執行</button>
+                                <button onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} className="flex-1 py-3 px-4 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium rounded-lg transition-colors text-sm">取消</button>
+                                <button onClick={confirmDialog.onConfirm} className={`flex-1 py-3 px-4 font-medium text-white rounded-lg transition-all duration-200 shadow-button hover:-translate-y-0.5 active:scale-95 text-sm ${confirmDialog.type === 'override' ? 'bg-gradient-to-r from-orange-500 to-red-500' : confirmDialog.type === 'swap' ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-gradient-to-r from-orange-500 to-amber-500'}`}>確認</button>
                             </div>
                         </div>
                     </div>
                 )}
                 
                 {publishConfirmOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
                         <div className="bg-white rounded-2xl p-6 md:p-8 max-w-md w-full shadow-hover-soft animate-pop border border-slate-100">
                             <div className="flex items-center gap-3 mb-4 text-indigo-600"><AlertCircle size={28} /><h3 className="text-2xl font-bold text-slate-900">準備發布班表</h3></div>
                             <div className="mb-8 bg-slate-50 p-5 rounded-xl border border-slate-100">
@@ -1204,7 +1660,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                     </div>
                 )}
 
-                {/* --- 快速編輯 Modal (比照圖片重新排版的雙欄佈局) --- */}
                 {quickEditData && (
                     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
                         <div className="bg-white rounded-2xl w-full max-w-2xl shadow-hover-soft animate-pop border border-slate-100 flex flex-col max-h-[90vh]">
@@ -1218,7 +1673,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                             
                             <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
                                 <div className="space-y-4">
-                                    {/* 第一排：姓名、服事意願 */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-500 uppercase">姓名 <span className="text-red-500">*</span></label>
@@ -1245,7 +1699,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                         </div>
                                     </div>
 
-                                    {/* 第二排：堂別、群組 ID */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-500 uppercase">堂別</label>
@@ -1292,7 +1745,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                         </div>
                                     </div>
 
-                                    {/* 第三排：崗位兼任、新朋友關懷設定 */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-500 uppercase">崗位兼任 <span className="text-slate-400 font-normal">(選填)</span></label>
@@ -1320,7 +1772,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                         </div>
                                     </div>
 
-                                    {/* 第四排：不可排班周 */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-medium text-slate-500 uppercase flex items-center gap-1.5">不可排班周 <span className="text-slate-400 font-normal">(選填)</span></label>
                                         <div className="flex flex-wrap gap-4 mt-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
@@ -1343,7 +1794,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                         </div>
                                     </div>
 
-                                    {/* 服事崗位 (往下移) */}
                                     <div className="pt-2 border-t border-slate-100">
                                         <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5 mb-3">
                                             <ShieldCheck size={18} className="text-indigo-500"/> 服事崗位
@@ -1369,7 +1819,6 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, supabase, utils
                                         </div>
                                     </div>
 
-                                    {/* 請假日期 (置底) */}
                                     <div className="pt-2 border-t border-slate-100">
                                         <label className="text-xs font-medium text-slate-500 uppercase">請假日期 (點選切換)</label>
                                         <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2 mt-2">

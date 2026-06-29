@@ -79,19 +79,20 @@
 
     <script type="text/babel" data-type="module" src="./MemberDataCenter.js"></script>
     <script type="text/babel" data-type="module" src="./SchedulingAndGovernance.js"></script>
+    <script type="text/babel" data-type="module" src="./TeamInsights.js"></script>
 
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Activity, LogOut, AlertCircle, User, Lock, Users, Calendar, ArrowRight, ShieldCheck, Eye, EyeOff } from 'lucide-react';
+        import { Activity, LogOut, AlertCircle, User, Lock, Users, Calendar, ArrowRight, ShieldCheck, Eye, EyeOff, BarChart3 } from 'lucide-react';
         import { createClient } from '@supabase/supabase-js';
 
         // ==========================================
         // 初始化連線與共用常數
         // ==========================================
         // ⚠️ 請填入你的專案 URL 和金鑰
-        const SUPABASE_URL = "https://jtjgqrqbewbgxscytkod.supabase.co";
-        const SUPABASE_KEY = "sb_publishable_TcixlGOMSLBSZNoMNOp6Ng_B-N4Tw1K"; 
+        const SUPABASE_URL = "https://iwmkzsredvbgcqvqlayn.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_GwDMLoXcHaTzQDCcQlDuGw_4J9mwiaA"; 
         const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const constants = {
@@ -193,14 +194,11 @@
             const [account, setAccount] = useState('');
             const [password, setPassword] = useState('');
             const [confirmPassword, setConfirmPassword] = useState(''); 
-            const [inviteCode, setInviteCode] = useState(''); 
             const [loading, setLoading] = useState(false);
             const [isSignUp, setIsSignUp] = useState(false);
             const [errorMsg, setErrorMsg] = useState('');
             const [showPassword, setShowPassword] = useState(false);
             const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-            const SECRET_INVITE_CODE = "HAPPY";
 
             const handleAuth = async (e) => {
                 e.preventDefault();
@@ -215,24 +213,21 @@
                         // 1. 註冊邏輯：前置防呆
                         // ==========================================
                         if (password !== confirmPassword) throw new Error('兩次輸入的密碼不同');
-                        if (inviteCode !== SECRET_INVITE_CODE) throw new Error('邀請碼錯誤');
 
                         // ==========================================
-                        // 2. 註冊邏輯：白名單機制檢查
+                        // 2. 註冊邏輯：純白名單驗證
                         // ==========================================
-                        // 呼叫我們在 Supabase 建立的 Security Definer 函數
-                        const { data: isMember, error: checkError } = await supabase.rpc('check_member_exists', { 
-                            p_account: account 
+                        const { data: isValid, error: checkError } = await supabase.rpc('check_member_exists', { 
+                            p_account: account
                         });
 
                         if (checkError) {
-                            console.error("白名單檢查失敗:", checkError);
-                            throw new Error('系統連線異常，無法驗證您的身分，請稍後再試');
+                            console.error("驗證錯誤:", checkError);
+                            throw new Error('系統驗證時發生錯誤。請確認網路狀態後再試一次；若持續失敗，請聯絡行政辦公室協助處理。');
                         }
 
-                        if (!isMember) {
-                            // 如果回傳 false，代表同工名單中沒有這個帳號/電話
-                            throw new Error('查無帳號！再試一次，或聯絡行政辦公室。');
+                        if (!isValid) {
+                            throw new Error('查無此帳號！請確認後再試，或聯絡行政辦公室。');
                         }
 
                         // ==========================================
@@ -240,20 +235,17 @@
                         // ==========================================
                         const { data, error } = await supabase.auth.signUp({ email: loginEmail, password });
                         
-                        // 【防呆】偵測 Supabase 是否在「假裝註冊成功」
                         const isFakeSuccess = data?.user && data.user.identities && data.user.identities.length === 0;
                         const isCompletelyNull = !error && (!data || !data.user);
                         
                         if (isFakeSuccess || isCompletelyNull) {
-                            throw new Error('User already registered'); // 丟給 catch 區塊翻譯
+                            throw new Error('User already registered'); 
                         }
 
                         if (error) throw error;
                         
-                        // 註冊成功，自動切換回登入畫面並提示
-                        alert('註冊成功！');
+                        alert('註冊成功！請使用新密碼登入。');
                         setIsSignUp(false);
-                        setInviteCode('');
                         setConfirmPassword('');
                         setShowPassword(false);
                         setShowConfirmPassword(false);
@@ -266,16 +258,13 @@
                         if (error) throw error;
                     }
                 } catch (error) {
-                    // ==========================================
-                    // 錯誤訊息轉換
-                    // ==========================================
                     let msg = error.message;
                     if (msg.includes('Invalid login credentials')) msg = '登入失敗：帳號或密碼錯誤';
-                    if (msg.includes('User already registered')) msg = 'Oops！帳號已註冊';
-                    if (msg.includes('Password should be at least')) msg = '密碼長度至少需6個字元';
-                    if (msg.includes('邀請碼錯誤')) msg = error.message; 
+                    if (msg.includes('User already registered')) msg = 'Oops！此帳號已經註冊過了';
+                    if (msg.includes('Password should be at least')) msg = '密碼長度至少需 6 個字元';
+                    if (msg.includes('查無此帳號')) msg = error.message; 
+                    if (msg.includes('系統驗證時發生錯誤')) msg = error.message; 
                     if (msg.includes('兩次輸入的密碼不同')) msg = error.message; 
-                    if (msg.includes('查無帳號')) msg = error.message; 
                     setErrorMsg(msg);
                 } finally {
                     setLoading(false);
@@ -356,19 +345,9 @@
                                 )}
 
                                 {isSignUp && (
-                                    <div className="space-y-1.5 animate-fade-in">
-                                        <label className="text-xs font-bold text-indigo-500 uppercase tracking-wider ml-1">邀請碼 <span className="text-red-500">*</span></label>
-                                        <div className="relative">
-                                            <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400" size={18} />
-                                            <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} className="w-full bg-indigo-50/50 border border-indigo-200 rounded-xl pl-11 pr-4 py-3.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all font-semibold text-slate-700" placeholder="輸入本會提供的邀請碼" required={isSignUp} />
-                                        </div>
-                                    </div>
-                                )}
-
-                                {isSignUp && (
                                     <div className="bg-amber-50 text-amber-700 text-xs font-bold p-3 rounded-xl border border-amber-100 flex items-start gap-2 leading-relaxed mt-2">
                                         <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                                        聯絡行政辦公室，確認已建立帳號並索取邀請碼。
+                                        限本會同工註冊使用
                                     </div>
                                 )}
 
@@ -380,11 +359,11 @@
                             <div className="mt-6 flex flex-col gap-4 text-center">
                                 {isSignUp ? (
                                     <div className="text-sm font-medium text-slate-500">
-                                        已有帳號？ <button type="button" onClick={() => { setIsSignUp(false); setErrorMsg(''); setConfirmPassword(''); setInviteCode(''); setShowPassword(false); setShowConfirmPassword(false); }} className="font-bold text-indigo-600 hover:text-indigo-700 transition-colors py-1">登入</button>
+                                        已有帳號？ <button type="button" onClick={() => { setIsSignUp(false); setErrorMsg(''); setConfirmPassword(''); setShowPassword(false); setShowConfirmPassword(false); }} className="font-bold text-indigo-600 hover:text-indigo-700 transition-colors py-1">登入</button>
                                     </div>
                                 ) : (
                                     <div className="text-sm font-medium text-slate-500">
-                                        沒有帳號？ <button type="button" onClick={() => { setIsSignUp(true); setErrorMsg(''); setConfirmPassword(''); setInviteCode(''); setShowPassword(false); setShowConfirmPassword(false); }} className="font-bold text-indigo-600 hover:text-indigo-700 transition-colors py-1">建立一個吧！</button>
+                                        沒有帳號？ <button type="button" onClick={() => { setIsSignUp(true); setErrorMsg(''); setConfirmPassword(''); setShowPassword(false); setShowConfirmPassword(false); }} className="font-bold text-indigo-600 hover:text-indigo-700 transition-colors py-1">建立一個吧！</button>
                                     </div>
                                 )}
                                 
@@ -409,6 +388,7 @@ const currentUserEmail = session.user?.email;
 // 檢查使用者的 app_metadata 中是否有 role: 'admin'
 const isAdmin = session.user?.app_metadata?.role === 'admin';
 
+            // 狀態加入 insights 路由
             const [currentApp, setCurrentApp] = useState(isAdmin ? 'home' : 'members'); 
 
             const handleLogout = async () => { await supabase.auth.signOut(); window.location.reload(); };
@@ -429,7 +409,7 @@ const isAdmin = session.user?.app_metadata?.role === 'admin';
                             <div className="flex items-center gap-3"><Activity className="text-indigo-600" size={28} /><h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">TBC Serve Manager</h1></div>
                             <button onClick={handleLogout} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 font-normal px-3 sm:px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors"><LogOut size={18} /> <span className="hidden sm:inline">Sign Out</span></button>
                         </header>
-                        <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-10 sm:py-16 animate-fade-in flex flex-col justify-center relative z-10">
+                        <main className="flex-1 w-full max-w-6xl mx-auto px-6 py-10 sm:py-16 animate-fade-in flex flex-col justify-center relative z-10">
                             <div className="mb-10 sm:mb-14 text-center sm:text-left">
                                 <h2 className="text-3xl sm:text-5xl font-extrabold mb-3 tracking-tight text-slate-900">
                                     Welcome <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600">back</span>
@@ -437,7 +417,8 @@ const isAdmin = session.user?.app_metadata?.role === 'admin';
                                 <p className="text-slate-500 font-normal text-sm sm:text-base">Select a workspace to continue your management tasks.</p>
                             </div>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 perspective-[2000px]">
+                            {/* 將卡片改為 md:grid-cols-3，一列並排三個選項 */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 perspective-[2000px]">
                                 <div onClick={() => setCurrentApp('members')} className="bg-white p-8 rounded-xl border border-slate-100 shadow-soft hover:shadow-hover-soft hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden transform hover:rotate-x-[2deg] hover:rotate-y-[-4deg]">
                                     <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-indigo-50 to-transparent rounded-bl-full -z-10 transition-transform duration-500 group-hover:scale-110"></div>
                                     <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-8"><Users size={32} /></div>
@@ -450,6 +431,13 @@ const isAdmin = session.user?.app_metadata?.role === 'admin';
                                     <h3 className="text-2xl font-extrabold text-slate-900 mb-10 tracking-tight">排班作業中心</h3>
                                     <div className="flex items-center gap-2 text-violet-600 font-medium text-sm group-hover:translate-x-1 transition-transform duration-200">Enter Workspace <ArrowRight size={16} /></div>
                                 </div>
+                                {/* 新增的人力洞察中心卡片 */}
+                                <div onClick={() => setCurrentApp('insights')} className="bg-white p-8 rounded-xl border border-slate-100 shadow-soft hover:shadow-hover-soft hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden transform hover:rotate-x-[2deg] hover:rotate-y-[4deg]">
+                                    <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-sky-50 to-transparent rounded-bl-full -z-10 transition-transform duration-500 group-hover:scale-110"></div>
+                                    <div className="w-16 h-16 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center mb-8"><BarChart3 size={32} /></div>
+                                    <h3 className="text-2xl font-extrabold text-slate-900 mb-10 tracking-tight">人力洞察中心</h3>
+                                    <div className="flex items-center gap-2 text-sky-600 font-medium text-sm group-hover:translate-x-1 transition-transform duration-200">Enter Workspace <ArrowRight size={16} /></div>
+                                </div>
                             </div>
                         </main>
                     </div>
@@ -458,6 +446,7 @@ const isAdmin = session.user?.app_metadata?.role === 'admin';
 
             const MemberDataCenterComp = window.MemberDataCenter;
             const SchedulingAndGovernanceComp = window.SchedulingAndGovernance;
+            const TeamInsightsComp = window.TeamInsights;
 
             return (
                 <div className="flex h-screen w-full bg-slate-50 overflow-hidden relative">
@@ -468,6 +457,7 @@ const isAdmin = session.user?.app_metadata?.role === 'admin';
                                     session={session} 
                                     goBack={isAdmin ? () => setCurrentApp('home') : handleLogout} 
                                     goToSchedule={() => setCurrentApp('scheduling')} 
+                                    goToInsights={() => setCurrentApp('insights')} 
                                     supabase={supabase} 
                                     utils={utils} 
                                     constants={constants} 
@@ -480,6 +470,22 @@ const isAdmin = session.user?.app_metadata?.role === 'admin';
                                     session={session} 
                                     goBack={() => setCurrentApp('home')} 
                                     goToMembers={() => setCurrentApp('members')} 
+                                    goToInsights={() => setCurrentApp('insights')} 
+                                    supabase={supabase} 
+                                    utils={utils} 
+                                    constants={constants} 
+                                    StatCard={StatCard} 
+                                  />
+                                : <div className="flex-1 flex items-center justify-center font-medium text-slate-500 animate-pulse">Loading...</div>
+                        )}
+                        {/* 處理 Insights 路由 */}
+                        {currentApp === 'insights' && isAdmin && (
+                            TeamInsightsComp 
+                                ? <TeamInsightsComp 
+                                    session={session} 
+                                    goBack={() => setCurrentApp('home')} 
+                                    goToMembers={() => setCurrentApp('members')} 
+                                    goToSchedule={() => setCurrentApp('scheduling')} 
                                     supabase={supabase} 
                                     utils={utils} 
                                     constants={constants} 
