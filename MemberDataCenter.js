@@ -153,7 +153,7 @@ const MemberDataCenter = ({ session, goBack, goToSchedule, goToInsights, supabas
 
             if (error) throw error;
             setIsSubmissionOpen(!isSubmissionOpen);
-            showMessage('success', `已${!isSubmissionOpen ? '開放' : '關閉'}同工填寫權限`);
+            showMessage('success', `${!isSubmissionOpen ? '開放' : '關閉'}同工填寫權限`);
         } catch (err) {
             showMessage('error', '權限切換失敗: ' + err.message);
         } finally {
