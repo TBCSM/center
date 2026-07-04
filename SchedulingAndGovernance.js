@@ -801,7 +801,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                 const shiftsThisSession = mShiftsToday.filter(d => d.session === session);
                 if (shiftsThisSession.length > 0) {
                     if (dualPref === 0) return false; 
-
+    if (shiftsThisSession.length >= 2) return false;
                     const concurrentRoles = ['接待', '收奉獻', '主餐', '新朋友關懷'];
                     if (!concurrentRoles.includes(activeRole)) return false;
                     const allExistingAreConcurrent = shiftsThisSession.every(d => concurrentRoles.includes(d._positionName));
