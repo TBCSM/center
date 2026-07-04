@@ -1,16 +1,11 @@
 /**
- * 教會季排班系統 - 核心引擎 (Scheduler Engine V20 + 暫停服事獨立解綁 + 動態聯集防呆)
- * 依據 Logic_Analysis.md 實作：
- * 1. 支援不可排班周 (unavailable_weeks) 動態寫入 unavailable_dates
- * 2. 嚴格的分數排序演算法 ([權重分, 歷史次數, 技能數量, 隨機/索引])
- * 3. 執行流程：執事 -> 跨堂預排 -> 家庭預排 -> 單堂填充 -> 補位 -> 最終 Refill
- * 4. FA 絕對同日同崗位，FB 同日即可
- * 5. FA/FB 終極防落單替換機制 (依服事次數踢人)
- * 6. 完美平衡：配對預查機制 (Lookahead)，兼顧配對與次數平均。
- * 7. FA/FB 家庭優先進場機制，徹底解決 FB 在第二堂尾聲找不到異崗位而落單的問題。
- * 8. FA 嚴格共進退：名額、技能、配額、禁排期與單日上限全面預查防護。
- * 9. FA 核心崗位豁免：當一人排入司會、PPT、執事輪值，另一人強制不排班，且不亮落單警報。
- * 10. 暫停服事解綁：若 FA/FB 一人「暫停服事/安息季」，另一人直接視為獨立排班，不受同進退連坐影響。
+ * 教會季排班系統 - 核心引擎 (Scheduler Engine V21 Final + 跨月防連週升維 + 配速優化)
+ * 實作優化目標：
+ * 1. [天數計算] 導入 totalDays 獨立計算出勤天數，支援同堂兼任以降低出勤日數。
+ * 2. [同堂兼任] 實作 _immediateComboFill 主動攔截，並將 Combo 列為絕對最優先。
+ * 3. [防呆配速] 「一季三次」單月出勤上限 = 2 天；「一季一次」智慧解禁週順延。
+ * 4. [防連週升維] 升級為 7 維度計分陣列，將防連週懲罰放在天數之前，完美解決跨月連週問題，且不破壞家庭連動。
+ * 5. [互斥隔離] 核心崗位與庶務崗位嚴格隔離，主餐與收奉獻開放自由兼任。
  */
 
 const sessionsToSchedule = ['第一堂', '第二堂'];
@@ -56,7 +51,6 @@ const ScheduleEngine = {
     } = params;
 
     const currentQuarterStr = `${year}-Q${quarter}`;
-
     const clonedMembers = JSON.parse(JSON.stringify(effectiveMembers));
 
     clonedMembers.forEach(m => {
@@ -76,7 +70,6 @@ const ScheduleEngine = {
                     }
                 }
 
-                // 【系統禁排動態聯集：不可排班周】
                 const unavailableWeeks = qs.unavailable_weeks ? (typeof qs.unavailable_weeks === 'string' ? JSON.parse(qs.unavailable_weeks) : qs.unavailable_weeks) : [];
 
                 if (Array.isArray(unavailableWeeks) && unavailableWeeks.length > 0) {
@@ -105,13 +98,15 @@ const ScheduleEngine = {
     const state = {
       draft: [],
       totalUsage: {},
+      totalDays: {},
       roleUsage: {},
       lastServedWeek: {},
       memberSkills: {},
       memberGroups: {}, 
+      openingWeek: {}, 
     };
 
-    this._prepareData(state, clonedMembers, effectiveMemberPositions);
+    this._prepareData(state, clonedMembers, effectiveMemberPositions, sundays);
 
     const specialIds = {
       deacon: positions.find((p) => String(p?.name || '').trim() === '執事輪值')?.id,
@@ -124,6 +119,7 @@ const ScheduleEngine = {
       const context = {
         sunday,
         weekIndex,
+        totalWeeks: sundays.length,
         dateStr: this.formatDate(sunday),
         dailyAssignments: {},
         availableSlots: this._createAvailableSlots(sunday, positions, roleSettings),
@@ -138,10 +134,11 @@ const ScheduleEngine = {
     return state.draft;
   },
 
-  _prepareData(state, members, memberPositions) {
+  _prepareData(state, members, memberPositions, sundays) {
     state.membersList = members; 
     members.forEach((m) => {
       state.totalUsage[m.id] = 0;
+      state.totalDays[m.id] = 0; 
       state.roleUsage[m.id] = {};
       state.lastServedWeek[m.id] = -99;
       state.memberSkills[m.id] = new Set(
@@ -149,6 +146,23 @@ const ScheduleEngine = {
       );
       if (m.group_id) {
           state.memberGroups[m.id] = String(m.group_id);
+      }
+
+      if (m.availability_status === '一季一次') {
+          const availableWeeks = [];
+          sundays.forEach((sunday, idx) => {
+              const dateStr = this.formatDate(sunday);
+              if (this._isAvailableOnDate(m, dateStr)) {
+                  availableWeeks.push(idx);
+              }
+          });
+          
+          if (availableWeeks.length > 0) {
+              const randomIdx = Math.floor(Math.random() * availableWeeks.length);
+              state.openingWeek[m.id] = availableWeeks[randomIdx];
+          } else {
+              state.openingWeek[m.id] = 0; 
+          }
       }
     });
   },
@@ -183,12 +197,28 @@ const ScheduleEngine = {
     
     if (!this._isAvailableOnDate(m, context.dateStr)) return false;
     
-    if (m.availability_status === '一季一次' && (state.totalUsage[m.id] || 0) >= 1) {
+    const dayShifts = state.draft.filter((d) => d.service_date === context.dateStr && d.member_id === m.id);
+    const hasShiftToday = dayShifts.length > 0;
+
+    if (m.availability_status === '一季一次' && (state.totalDays[m.id] || 0) >= 1 && !hasShiftToday) {
         return false;
     }
 
-    if (m.availability_status === '一季三次' && (state.totalUsage[m.id] || 0) >= 3) {
-        return false;
+    if (m.availability_status === '一季三次') {
+        if ((state.totalDays[m.id] || 0) >= 3 && !hasShiftToday) return false;
+
+        if (!hasShiftToday) {
+            const currentMonth = new Date(context.dateStr).getMonth();
+            const monthShifts = state.draft.filter(d => 
+                d.member_id === m.id && 
+                new Date(d.service_date).getMonth() === currentMonth
+            );
+            const uniqueDaysInMonth = new Set(monthShifts.map(d => d.service_date)).size;
+            
+            if (uniqueDaysInMonth >= 2) {
+                return false;
+            }
+        }
     }
 
     if (!state.memberSkills[m.id].has(posId)) return false;
@@ -197,14 +227,17 @@ const ScheduleEngine = {
       if ((state.roleUsage[m.id][posId] || 0) >= 4) return false;
     }
 
-    const dayShifts = state.draft.filter((d) => d.service_date === context.dateStr && d.member_id === m.id);
-    const dayRoles = dayShifts.map(d => d._positionName);
-
     if (dayShifts.length >= 2) return false; 
+
+    const dayRoles = dayShifts.map(d => d._positionName);
+    const coreRoles = ['司會', 'PPT', '執事輪值'];
+
+    if (dayRoles.some(r => coreRoles.includes(r))) return false;
+    if (coreRoles.includes(roleName) && dayShifts.length > 0) return false;
 
     const dualPref = parseInt(m.dual_service_pref) || 0;
 
-    if (roleName !== '執事輪值') {
+    if (!coreRoles.includes(roleName)) {
         if (dayShifts.length === 1) {
             const firstShift = dayShifts[0];
             if (dualPref === 1) {
@@ -219,12 +252,6 @@ const ScheduleEngine = {
             }
         }
 
-        if (dualPref === 0) {
-            const leaderRoles = ['司會', 'PPT'];
-            if (leaderRoles.includes(roleName) && dayShifts.length > 0) return false;
-            if (dayRoles.some(r => leaderRoles.includes(r))) return false;
-        }
-
         if (dayShifts.length === 0) {
             if (dualPref === 0 && m.preferred_session && m.preferred_session !== '皆可') {
                 const prefStr = String(m.preferred_session);
@@ -236,7 +263,6 @@ const ScheduleEngine = {
     if (!skipFamilyCheck) {
         const myGroupId = state.memberGroups[m.id];
         if (myGroupId && (myGroupId.startsWith('FA') || myGroupId.startsWith('FB'))) {
-            
             const assignedFamilyIds = Object.keys(context.dailyAssignments).filter(
                 id => id !== m.id && state.memberGroups[id] === myGroupId
             );
@@ -280,9 +306,19 @@ const ScheduleEngine = {
                         if (!this._isAvailableOnDate(famMember, context.dateStr)) return false;
                         if (!state.memberSkills[fid]?.has(posId)) return false; 
 
-                        const famUsage = state.totalUsage[fid] || 0;
-                        if (famMember.availability_status === '一季一次' && famUsage >= 1) return false;
-                        if (famMember.availability_status === '一季三次' && famUsage >= 3) return false;
+                        const famDays = state.totalDays[fid] || 0;
+                        const famHasShiftToday = state.draft.some(d => d.service_date === context.dateStr && d.member_id === fid);
+                        if (famMember.availability_status === '一季一次' && famDays >= 1 && !famHasShiftToday) return false;
+                        
+                        if (famMember.availability_status === '一季三次') {
+                            if (famDays >= 3 && !famHasShiftToday) return false;
+                            if (!famHasShiftToday) {
+                                const currentMonth = new Date(context.dateStr).getMonth();
+                                const monthShifts = state.draft.filter(d => d.member_id === fid && new Date(d.service_date).getMonth() === currentMonth);
+                                const uniqueDays = new Set(monthShifts.map(d => d.service_date)).size;
+                                if (uniqueDays >= 2) return false;
+                            }
+                        }
 
                         const famDayShifts = state.draft.filter((d) => d.service_date === context.dateStr && d.member_id === fid);
                         if (famDayShifts.length >= 2) return false;
@@ -296,11 +332,23 @@ const ScheduleEngine = {
   },
 
   _getScore(m, slot, state, context, members) {
-    let weight = 0;
+    let criticalWeight = 0; 
+    let softWeight = 0;     
+
+    if (m.availability_status === '一季一次' && state.totalDays[m.id] === 0) {
+        const openingWeek = state.openingWeek[m.id] || 0;
+        const isSafetyNetActive = (context.totalWeeks - context.weekIndex) <= 3;
+
+        if (context.weekIndex < openingWeek && !isSafetyNetActive) {
+            criticalWeight += 20000; 
+        } else {
+            criticalWeight -= 10000; 
+        }
+    }
 
     if (['執事輪值', '司會'].includes(slot.roleName)) {
        const currentUsage = state.roleUsage[m.id]?.[slot.posId] || 0;
-       if (currentUsage === 0) weight -= 20000;
+       if (currentUsage === 0) criticalWeight -= 20000;
     }
 
     const myGroupId = state.memberGroups[m.id];
@@ -316,41 +364,42 @@ const ScheduleEngine = {
                assignedFamilyIds.forEach(fid => context.dailyAssignments[fid].forEach(r => familyRoles.add(r)));
                
                if (myGroupId.startsWith('FA') && familyRoles.has(slot.roleName)) {
-                   weight -= 15000; 
+                   criticalWeight -= 15000; 
                } else if (myGroupId.startsWith('FB')) {
-                   weight -= 15000; 
+                   criticalWeight -= 15000; 
                }
            }
        }
     }
 
-    const dayRoles = context.dailyAssignments[m.id] || [];
-    const comboRoles = ['接待', '收奉獻', '主餐', '新朋友關懷'];
-    if (dayRoles.length === 1 && comboRoles.includes(slot.roleName) && comboRoles.includes(dayRoles[0])) {
-       weight -= 5000;
-    }
-
     if (state.lastServedWeek[m.id] === context.weekIndex - 1) {
-       weight += 1000;
+       criticalWeight += 5000; 
     }
 
     const isFamily = myGroupId && (String(myGroupId).startsWith('FA') || String(myGroupId).startsWith('FB'));
     if (!isFamily && state.memberSkills[m.id].size === 1) {
-        weight -= 800; 
+        softWeight -= 800; 
     }
 
     if (isFamily && members) {
         const skillAvg = this._getSkillAvgUsage(state, members, slot.posId);
         if ((state.totalUsage[m.id] || 0) > skillAvg + 0.1) {
-            weight += 2000; 
+            softWeight += 2000; 
         }
     }
 
+    const dayRoles = context.dailyAssignments[m.id] || [];
+    const comboRoles = ['接待', '收奉獻', '主餐', '新朋友關懷'];
+    const isComboOpportunity = dayRoles.length > 0 && comboRoles.includes(slot.roleName) && dayRoles.some(r => comboRoles.includes(r));
+
     return [
-        weight, 
-        state.totalUsage[m.id] || 0, 
-        state.memberSkills[m.id].size, 
-        Math.random()
+        isComboOpportunity ? 0 : 1,   
+        criticalWeight,               
+        state.totalDays[m.id] || 0,   
+        softWeight,                   
+        state.totalUsage[m.id] || 0,  
+        state.memberSkills[m.id].size,
+        Math.random()                 
     ];
   },
 
@@ -416,7 +465,6 @@ const ScheduleEngine = {
           
           for (let s1 of s1Slots) {
               if (!this._canAssign(m, s1, state, context, 0)) continue;
-              
               if ((state.totalUsage[m.id] || 0) > this._getSkillAvgUsage(state, members, s1.posId) + 0.1) continue;
               
               let s2 = null;
@@ -476,7 +524,6 @@ const ScheduleEngine = {
           });
 
           const isFA = gid.startsWith('FA');
-
           let placed = false;
           const m0 = gMembers[0];
           
@@ -484,7 +531,6 @@ const ScheduleEngine = {
               for (let role of roleOrder) {
                   const slot0 = context.availableSlots.find(s => s.session === sess && s.roleName === role && s.needed > 0);
                   if (!slot0 || !this._canAssign(m0, slot0, state, context, 0, members)) continue;
-
                   if ((state.totalUsage[m0.id] || 0) > this._getSkillAvgUsage(state, members, slot0.posId) + 0.1) continue;
 
                   if (isFA && ['司會', 'PPT', '執事輪值'].includes(role)) {
@@ -535,6 +581,7 @@ const ScheduleEngine = {
                           this._assign(plan.member, plan.slot, state, context);
                       }
                       for (let plan of plannedSlots) {
+                          this._immediateComboFill(plan.member, state, context, members);
                           this._immediateFOFill(plan.member, state, context, members);
                       }
                       placed = true;
@@ -558,6 +605,7 @@ const ScheduleEngine = {
       const assignedMember = scored[0].m;
       this._assign(assignedMember, slot, state, context);
       
+      this._immediateComboFill(assignedMember, state, context, members);
       this._immediateFOFill(assignedMember, state, context, members);
       this._immediateFamilyFill(assignedMember, state, context, members);
       
@@ -565,12 +613,38 @@ const ScheduleEngine = {
     }
   },
 
+  _immediateComboFill(baseMember, state, context, members) {
+      const comboRoles = ['接待', '收奉獻', '主餐', '新朋友關懷'];
+      const dayShifts = state.draft.filter(d => d.service_date === context.dateStr && d.member_id === baseMember.id);
+      
+      if (dayShifts.length >= 2) return; 
+
+      const currentShift = dayShifts[0];
+      if (!currentShift || !comboRoles.includes(currentShift._positionName)) return;
+      
+      const targetSession = currentShift.session;
+
+      const targetSlots = context.availableSlots.filter(s => 
+          s.session === targetSession && 
+          s.needed > 0 && 
+          comboRoles.includes(s.roleName) && 
+          s.roleName !== currentShift._positionName
+      );
+
+      for (let slot of targetSlots) {
+          if (this._canAssign(baseMember, slot, state, context, 0, true)) {
+              this._assign(baseMember, slot, state, context);
+              break; 
+          }
+      }
+  },
+
   _immediateFOFill(baseMember, state, context, members) {
       const pref = parseInt(baseMember.dual_service_pref) || 0;
       if (pref !== 1 && pref !== 2) return;
 
       const dayShifts = state.draft.filter(d => d.service_date === context.dateStr && d.member_id === baseMember.id);
-      if (dayShifts.length >= 2 || dayShifts.some(s => s._positionName === '執事輪值')) return;
+      if (dayShifts.length >= 2 || dayShifts.some(s => ['司會', 'PPT', '執事輪值'].includes(s._positionName))) return;
 
       const currentShift = dayShifts[0];
       if (!currentShift) return;
@@ -614,13 +688,13 @@ const ScheduleEngine = {
 
       unassignedFamily.forEach(famMember => {
           let assigned = false;
-          
           let availableSlots = context.availableSlots.filter(s => s.session === targetSession && s.needed > 0);
           for (let slot of availableSlots) {
               if (groupId.startsWith('FA') && slot.roleName !== targetRole) continue;
 
               if (this._canAssign(famMember, slot, state, context, 0, false)) {
                   this._assign(famMember, slot, state, context);
+                  this._immediateComboFill(famMember, state, context, members);
                   this._immediateFOFill(famMember, state, context, members);
                   assigned = true;
                   break;
@@ -634,6 +708,7 @@ const ScheduleEngine = {
                   
                   if (this._canAssign(famMember, slot, state, context, 0, false)) {
                       this._assign(famMember, slot, state, context);
+                      this._immediateComboFill(famMember, state, context, members);
                       this._immediateFOFill(famMember, state, context, members); 
                       break;
                   }
@@ -680,7 +755,7 @@ const ScheduleEngine = {
        if (pref !== 1 && pref !== 2) return; 
 
        const myShifts = todayShifts.filter(d => d.member_id === m.id);
-       if (myShifts.length >= 2 || myShifts.some(s => s._positionName === '執事輪值')) return;
+       if (myShifts.length >= 2 || myShifts.some(s => ['司會', 'PPT', '執事輪值'].includes(s._positionName))) return;
 
        const currentShift = myShifts[0];
        const targetSession = currentShift.session === '第一堂' ? '第二堂' : '第一堂';
@@ -724,7 +799,6 @@ const ScheduleEngine = {
       const unassignedMembers = gMembers.filter(m => !context.dailyAssignments[m.id]);
 
       if (assignedMembers.length > 0 && unassignedMembers.length > 0) {
-         
          const aRoles = context.dailyAssignments[assignedMembers[0].id] || [];
          if (aRoles.some(r => ['司會', 'PPT', '執事輪值'].includes(r))) {
              return; 
@@ -734,16 +808,15 @@ const ScheduleEngine = {
          if (!targetSession) return;
 
          unassignedMembers.sort((a, b) => (state.totalUsage[a.id] || 0) - (state.totalUsage[b.id] || 0));
-
          let currentAssignedCount = assignedMembers.length;
 
          unassignedMembers.forEach(unM => {
             let assigned = false;
-            
             const targetSlots = context.availableSlots.filter(s => s.session === targetSession && s.needed > 0);
             for (let s of targetSlots) {
                if (this._canAssign(unM, s, state, context, 0, true)) {
                   this._assign(unM, s, state, context);
+                  this._immediateComboFill(unM, state, context, members);
                   assigned = true;
                   break;
                }
@@ -754,6 +827,7 @@ const ScheduleEngine = {
                 for (let s of otherSlots) {
                    if (this._canAssign(unM, s, state, context, 0, true)) {
                       this._assign(unM, s, state, context);
+                      this._immediateComboFill(unM, state, context, members);
                       assigned = true;
                       break;
                    }
@@ -789,7 +863,7 @@ const ScheduleEngine = {
       let bestScore = -9999;
 
       for (let shift of todayShifts) {
-          if (shift._positionName === '執事輪值') continue;
+          if (['司會', 'PPT', '執事輪值'].includes(shift._positionName)) continue;
 
           const mockSlot = { roleName: shift._positionName, session: shift.session, posId: shift.position_id };
           if (!this._canAssign(unM, mockSlot, state, context, 0, true)) continue;
@@ -826,6 +900,13 @@ const ScheduleEngine = {
       const dailyIdx = context.dailyAssignments[oldMemberId].indexOf(slotInfo.roleName);
       if (dailyIdx > -1) context.dailyAssignments[oldMemberId].splice(dailyIdx, 1);
 
+      if (context.dailyAssignments[oldMemberId].length === 0) {
+          state.totalDays[oldMemberId] = Math.max(0, (state.totalDays[oldMemberId] || 0) - 1);
+      }
+
+      if (!context.dailyAssignments[newMember.id] || context.dailyAssignments[newMember.id].length === 0) {
+          state.totalDays[newMember.id] = (state.totalDays[newMember.id] || 0) + 1;
+      }
       state.totalUsage[newMember.id] = (state.totalUsage[newMember.id] || 0) + 1;
       state.roleUsage[newMember.id][slotInfo.posId] = (state.roleUsage[newMember.id][slotInfo.posId] || 0) + 1;
       state.lastServedWeek[newMember.id] = context.weekIndex;
@@ -840,6 +921,11 @@ const ScheduleEngine = {
   _assign(m, slot, state, context, isEmergency = 0) {
     slot.assigned.push(m);
     slot.needed--;
+
+    if (!context.dailyAssignments[m.id] || context.dailyAssignments[m.id].length === 0) {
+        state.totalDays[m.id] = (state.totalDays[m.id] || 0) + 1;
+    }
+
     state.totalUsage[m.id]++;
     state.roleUsage[m.id][slot.posId] = (state.roleUsage[m.id][slot.posId] || 0) + 1;
     state.lastServedWeek[m.id] = context.weekIndex;
