@@ -245,21 +245,36 @@ const ScheduleEngine = {
     const dayRoles = dayShifts.map(d => d._positionName);
     const coreRoles = ['司會', 'PPT', '執事輪值'];
 
-    if (dayRoles.some(r => coreRoles.includes(r))) return false;
-    if (coreRoles.includes(roleName) && dayShifts.length > 0) return false;
-
-    if (!coreRoles.includes(roleName)) {
-        if (dayShifts.length === 1) {
-            const firstShift = dayShifts[0];
-            if (dualPref === 1) {
-                if (firstShift.session === session) return false; 
-                if (firstShift._positionName !== roleName) return false; 
-            } else if (dualPref === 2) {
-                if (firstShift.session === session) return false; 
-                if (firstShift._positionName === roleName) return false; 
+  // === 智慧防護網：統一處理核心與一般崗位的雙堂偏好 ===
+    if (dayShifts.length > 0) {
+        const firstShift = dayShifts[0];
+        
+        if (firstShift.session === session) {
+            // 【同堂判斷】：只有單堂偏好者 (dualPref === 0)，且新舊崗位都屬於兼任白名單時才放行
+            const comboRoles = ['接待', '收奉獻', '主餐', '新朋友關懷'];
+            const isComboQualified = comboRoles.includes(roleName) && comboRoles.includes(firstShift._positionName);
+            
+            if (dualPref === 0 && isComboQualified && firstShift._positionName !== roleName) {
+                // 放行兼任
             } else {
+                return false; // 阻擋其他所有同堂排班的狀況
+            }
+        } else {
+            // 【跨堂判斷】
+            if (dualPref === 1) {
+                // 【二堂同崗】：必須是相同崗位
+                if (firstShift._positionName !== roleName) return false;
+            } else if (dualPref === 2) {
+                // 【二堂異崗】：必須是不同崗位
+                if (firstShift._positionName === roleName) return false;
+            } else {
+                // 【單堂偏好】：若已排班，或涉及核心崗位，嚴格阻擋跨堂
+                const isCoreRole = coreRoles.includes(roleName);
+                const hasCoreRoleAssigned = dayRoles.some(r => coreRoles.includes(r));
+                if (isCoreRole || hasCoreRoleAssigned) return false;
+                
+                // 單堂偏好者，若堂次不符原始偏好也擋 (雖然上方已被 if 分流，此行作為雙重保險)
                 if (firstShift.session !== session) return false; 
-                if (firstShift._positionName === roleName) return false; 
             }
         }
     }
@@ -648,7 +663,8 @@ const ScheduleEngine = {
       if (pref !== 1 && pref !== 2) return;
 
       const dayShifts = state.draft.filter(d => d.service_date === context.dateStr && d.member_id === baseMember.id);
-      if (dayShifts.length >= 2 || dayShifts.some(s => ['司會', 'PPT', '執事輪值'].includes(s._positionName))) return;
+      // 解除對 司會 和 PPT 的封殺，確保排滿兩堂或包含執事輪值時不再補位
+    if (dayShifts.length >= 2 || dayShifts.some(s => s._positionName === '執事輪值')) return;
 
       const currentShift = dayShifts[0];
       if (!currentShift) return;
@@ -762,7 +778,8 @@ const ScheduleEngine = {
        if (pref !== 1 && pref !== 2) return; 
 
        const myShifts = todayShifts.filter(d => d.member_id === m.id);
-       if (myShifts.length >= 2 || myShifts.some(s => ['司會', 'PPT', '執事輪值'].includes(s._positionName))) return;
+       // 解除司會與 PPT 的封殺，讓他們能順利執行雙堂異崗補
+      if (myShifts.length >= 2 || myShifts.some(s => s._positionName === '執事輪值')) return;
 
        const currentShift = myShifts[0];
        const targetSession = currentShift.session === '第一堂' ? '第二堂' : '第一堂';
