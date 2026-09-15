@@ -259,24 +259,27 @@ const ScheduleEngine = {
             } else {
                 return false; // 阻擋其他所有同堂排班的狀況
             }
-        } else {
-            // 【跨堂判斷】
-            if (dualPref === 1) {
-                // 【二堂同崗】：必須是相同崗位
-                if (firstShift._positionName !== roleName) return false;
-            } else if (dualPref === 2) {
-                // 【二堂異崗】：必須是不同崗位
-                if (firstShift._positionName === roleName) return false;
-            } else {
-                // 【單堂偏好】：若已排班，或涉及核心崗位，嚴格阻擋跨堂
+       } else {
+                // 【跨堂判斷】
                 const isCoreRole = coreRoles.includes(roleName);
                 const hasCoreRoleAssigned = dayRoles.some(r => coreRoles.includes(r));
-                if (isCoreRole || hasCoreRoleAssigned) return false;
-                
-                // 單堂偏好者，若堂次不符原始偏好也擋 (雖然上方已被 if 分流，此行作為雙重保險)
-                if (firstShift.session !== session) return false; 
+
+                if (dualPref === 1) {
+                    // 【二堂同崗】：必須是相同崗位
+                    if (firstShift._positionName !== roleName) return false;
+                } else if (dualPref === 2) {
+    // 【二堂異崗】：必須是不同崗位，且不可再佔用第二個核心崗位
+    if (firstShift._positionName === roleName) return false;
+
+    // 防呆：核心崗位（司會/PPT/執事輪值）名額稀少，異崗者已佔一個核心崗後，
+    // 第二堂不得再搶第二個核心崗，避免排擠需要「同崗」配對的人
+    if (isCoreRole && hasCoreRoleAssigned) return false;
+} else {
+                    // 【單堂偏好 或 被降級者】：若已排班，或涉及核心崗位，嚴格阻擋跨堂
+                    if (isCoreRole || hasCoreRoleAssigned) return false;
+                    if (firstShift.session !== session) return false; 
+                }
             }
-        }
     }
 
     if (!skipFamilyCheck) {
@@ -476,7 +479,14 @@ const ScheduleEngine = {
           return true;
       });
 
-      dualMembers.sort((a, b) => (state.totalUsage[a.id] || 0) - (state.totalUsage[b.id] || 0));
+    dualMembers.sort((a, b) => {
+    const pa = parseInt(a.dual_service_pref) || 0;
+    const pb = parseInt(b.dual_service_pref) || 0;
+    // 限制較嚴格者優先：1(二堂同崗) 先於 2(二堂異崗)
+    // 同崗者只能匹配「唯一指定崗位」，若晚處理，該崗位可能已被異崗者佔用而配對失敗
+    if (pa !== pb) return pa - pb;
+    return (state.totalUsage[a.id] || 0) - (state.totalUsage[b.id] || 0);
+});
 
       for (let m of dualMembers) {
           const p = parseInt(m.dual_service_pref);
@@ -486,14 +496,26 @@ const ScheduleEngine = {
               if (!this._canAssign(m, s1, state, context, 0)) continue;
               if ((state.totalUsage[m.id] || 0) > this._getSkillAvgUsage(state, members, s1.posId) + 0.1) continue;
               
+              // === 新增：建立模擬草稿，消除防護空窗期 ===
+              state.draft.push({
+                  service_date: context.dateStr, 
+                  session: s1.session, 
+                  member_id: m.id, 
+                  position_id: s1.posId,
+                  _positionName: s1.roleName
+              });
+
               let s2 = null;
               const s2Slots = context.availableSlots.filter(s => s.session === '第二堂' && s.needed > 0);
               
               if (p === 1) { 
-                  s2 = s2Slots.find(s => s.roleName === s1.roleName && this._canAssign(m, s, state, context, 0) && (state.totalUsage[m.id] || 0) <= this._getSkillAvgUsage(state, members, s.posId) + 0.1);
+                  s2 = s2Slots.find(s => s.roleName === s1.roleName && this._canAssign(m, s, state, context, 0) && (state.totalUsage[m.id] || 0) <= this._getSkillAvgUsage(state, members, s1.posId) + 0.1);
               } else if (p === 2) { 
-                  s2 = s2Slots.find(s => s.roleName !== s1.roleName && this._canAssign(m, s, state, context, 0) && (state.totalUsage[m.id] || 0) <= this._getSkillAvgUsage(state, members, s.posId) + 0.1);
+                  s2 = s2Slots.find(s => s.roleName !== s1.roleName && this._canAssign(m, s, state, context, 0) && (state.totalUsage[m.id] || 0) <= this._getSkillAvgUsage(state, members, s1.posId) + 0.1);
               }
+
+              // === 移除模擬草稿 ===
+              state.draft.pop();
 
               if (s2) {
                   this._assign(m, s1, state, context);
