@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-    Users, Copy, Trash2, CalendarX, Search, X, Edit2, ShieldCheck, 
+    Users, Copy, Trash2, CalendarX, Search, X, Edit2, Edit3, ShieldCheck, 
     Check, Save, CheckCircle2, AlertCircle, UserPlus, User, ChevronLeft,
     Home, LogOut, Calendar, Lock, Unlock, Menu, BarChart3
 } from 'lucide-react';
@@ -617,8 +617,8 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
             )}
 
             <div className="flex-1 flex flex-col relative bg-slate-50 overflow-hidden animate-fade-in">
-                <div className="bg-white px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0 shadow-sm z-20">
-                    <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className={`bg-white ${isAdmin ? 'px-6' : 'px-0'} py-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0 shadow-sm z-20`}>
+                    <div className={`items-center gap-3 w-full md:w-auto ${isAdmin ? 'flex' : 'hidden'}`}>
                         
                         {isAdmin && (
                             <button 
@@ -629,39 +629,46 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                             </button>
                         )}
                         
-                        <button 
-                            onClick={goBack} 
-                            className={`${isAdmin ? 'hidden md:block' : 'block'} p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-colors`} 
-                            title={isAdmin ? "返回首頁" : "登出系統"}
-                        >
-                            {isAdmin ? <ChevronLeft size={24} /> : <LogOut size={22} className="ml-0.5" />}
-                        </button>
-                        
-                        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 flex items-center gap-2 sm:gap-3 tracking-tight">
-                            <Users className="text-indigo-600 hidden sm:block" size={28}/> 
-                            <span className="truncate">同工資料中心</span>
-                        </h2>
+                        {isAdmin && (
+                            <React.Fragment>
+                                <button 
+                                    onClick={goBack} 
+                                    className="hidden md:block p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-colors" 
+                                    title="返回首頁"
+                                >
+                                    <ChevronLeft size={24} />
+                                </button>
+                                
+                                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 flex items-center gap-2 sm:gap-3 tracking-tight">
+                                    <Users className="text-indigo-600 hidden sm:block" size={28}/> 
+                                    <span className="truncate">同工資料中心</span>
+                                </h2>
+                            </React.Fragment>
+                        )}
                     </div>
                     
-                    <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto no-scrollbar pb-1 md:pb-0">
+                    <div className={`flex items-center gap-3 overflow-x-auto no-scrollbar pb-1 md:pb-0 ${isAdmin ? 'w-full md:w-auto' : 'w-full max-w-2xl mx-auto px-4 sm:px-6'}`}>
                         {!isAdmin && (
-                            <div className="flex items-center bg-slate-50 p-1.5 rounded-lg border border-slate-200 shadow-sm shrink-0">
-                                <div className={`h-8 px-4 rounded-md text-xs font-medium whitespace-nowrap flex items-center gap-2 shadow-sm bg-white ${isSubmissionOpen ? 'text-emerald-600' : 'text-red-600'}`}>
-                                    {isSubmissionOpen ? (
-                                        <>
-                                            <span className="relative flex h-2.5 w-2.5">
-                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                                            </span>
-                                            Open Now
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                                            View Only
-                                        </>
-                                    )}
+                            <div className="grid grid-cols-3 gap-2 w-full shrink-0">
+                                <div className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border shadow-sm ${isSubmissionOpen ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-red-50 border-red-100 text-red-600'}`}>
+                                    {isSubmissionOpen ? <Unlock size={22} /> : <Lock size={22} />}
+                                    <span className="text-xs font-bold whitespace-nowrap">{isSubmissionOpen ? '開放填寫' : '暫停填寫'}</span>
                                 </div>
+                                <button
+                                    onClick={() => setIsLargeFont(!isLargeFont)}
+                                    className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border shadow-sm transition-all duration-200 ${isLargeFont ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                                >
+                                    <span className="font-bold text-[20px] leading-[22px] h-[22px]">Aa</span>
+                                    <span className="text-xs font-bold whitespace-nowrap">{isLargeFont ? '標準文字' : '放大文字'}</span>
+                                </button>
+                                <button
+                                    onClick={() => displayMembers[0] && openEditModal(displayMembers[0])}
+                                    disabled={!isSubmissionOpen || !displayMembers[0]}
+                                    className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border shadow-sm transition-all duration-200 bg-pink-50 border-pink-100 text-pink-600 hover:bg-pink-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <Edit3 size={22} />
+                                    <span className="text-xs font-bold whitespace-nowrap">編輯資料</span>
+                                </button>
                             </div>
                         )}
 
@@ -712,6 +719,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                             </div>
                         )}
 
+                        {isAdmin && (
                         <div className="flex items-center bg-slate-50 p-1.5 rounded-lg border border-slate-200 shadow-sm shrink-0">
                             <button 
                                 onClick={() => setIsLargeFont(!isLargeFont)} 
@@ -720,6 +728,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                                 <span className="font-bold text-[14px] leading-none">Aa</span> {isLargeFont ? '標準' : '較大'}
                             </button>
                         </div>
+                        )}
                     </div>
                 </div>
 
@@ -733,11 +742,11 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                     </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto p-6 pt-2 custom-scrollbar pb-24">
+                <div className={`flex-1 overflow-y-auto ${isAdmin ? 'p-6' : 'px-0 py-6'} pt-2 custom-scrollbar pb-24`}>
                     {isLoading && members.length === 0 ? (
                         <div className="text-center py-20 text-slate-400 font-medium animate-pulse">Loading...</div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                        <div className={`grid gap-4 sm:gap-6 ${isAdmin ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 max-w-2xl mx-auto w-full px-4 sm:px-6'}`}>
                             {displayMembers.map(member => {
                                 const settings = quarterSettings.find(s => s.member_id === member.id) || DEFAULT_MEMBER;
                                 const ownedPosList = memberPositions.filter(mp => mp.member_id === member.id).map(mp => {
@@ -774,35 +783,41 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                                 return (
                                     <div key={member.id} className="bg-white rounded-xl p-4 sm:p-6 shadow-soft border border-slate-100 hover:shadow-hover-soft hover:-translate-y-1 transition-all duration-200 relative group">
                                         <div className="flex justify-between items-start mb-3">
-                                            <div>
-                                                <h3 className={`${isLargeFont ? 'text-2xl sm:text-3xl' : 'text-xl sm:text-2xl'} font-bold text-slate-900 flex items-center gap-2 flex-wrap leading-tight`}>
-                                                    {member.name}
-                                                    {isAdmin && settings.dual_service_pref === 0 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-red-50 text-red-600 rounded border border-red-100 font-bold`}>關閉兼任</span>}
-                                                    {isAdmin && settings.dual_service_pref === 1 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-violet-50 text-violet-600 rounded border border-violet-100 font-bold`}>二堂同崗</span>}
-                                                    {isAdmin && settings.dual_service_pref === 2 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-violet-50 text-violet-600 rounded border border-violet-100 font-bold`}>二堂異崗</span>}
-                                                    {isAdmin && member.group_id && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-indigo-50 text-indigo-600 rounded border border-indigo-100 font-bold`}>{member.group_id}</span>}
-                                                </h3>
-                                                <div className={`flex items-center flex-wrap gap-1.5 ${isLargeFont ? 'text-sm' : 'text-xs'} font-normal mt-3`}>
-                                                    <span className={`px-2 py-0.5 rounded-full ${settings.availability_status === '穩定服事' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
-                                                        {settings.availability_status}
-                                                    </span>
-                                                    <span className="text-slate-300">|</span>
-                                                    <span className="text-slate-500">{settings.preferred_session}</span>
+                                            <div className={!isAdmin ? 'flex items-center gap-3' : ''}>
+                                                <div>
+                                                    {isAdmin && (
+                                                        <h3 className={`${isLargeFont ? 'text-2xl sm:text-3xl' : 'text-xl sm:text-2xl'} font-bold text-slate-900 flex items-center gap-2 flex-wrap leading-tight`}>
+                                                            {member.name}
+                                                            {settings.dual_service_pref === 0 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-red-50 text-red-600 rounded border border-red-100 font-bold`}>關閉兼任</span>}
+                                                            {settings.dual_service_pref === 1 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-violet-50 text-violet-600 rounded border border-violet-100 font-bold`}>二堂同崗</span>}
+                                                            {settings.dual_service_pref === 2 && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-violet-50 text-violet-600 rounded border border-violet-100 font-bold`}>二堂異崗</span>}
+                                                            {member.group_id && <span className={`${isLargeFont ? 'text-xs px-2.5 py-1' : 'text-[10px] px-2 py-0.5'} bg-indigo-50 text-indigo-600 rounded border border-indigo-100 font-bold`}>{member.group_id}</span>}
+                                                        </h3>
+                                                    )}
+                                                    <div className={`flex items-center flex-wrap gap-1.5 ${isLargeFont ? 'text-sm' : 'text-xs'} font-normal ${isAdmin ? 'mt-3' : ''}`}>
+                                                        <span className={`px-2 py-0.5 rounded-full ${settings.availability_status === '穩定服事' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
+                                                            {settings.availability_status}
+                                                        </span>
+                                                        <span className="text-slate-300">|</span>
+                                                        <span className="text-slate-500">{settings.preferred_session}</span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className={`flex gap-1.5 transition-opacity ${!isAdmin ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'}`}>
-                                                {(isAdmin || isSubmissionOpen) && <button onClick={() => openEditModal(member)} className="p-2.5 bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 rounded-lg transition-colors"><Edit2 size={16}/></button>}
-                                                {isAdmin && member.email && (
-                                                    <button 
-                                                        onClick={() => handleResetAuth(member.email, member.name)} 
-                                                        title="重設密碼"
-                                                        className="p-2.5 bg-slate-50 hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg transition-colors"
-                                                    >
-                                                        <Unlock size={16}/> 
-                                                    </button>
-                                                )}
-                                                {isAdmin && <button onClick={() => handleDelete(member.id, member.name)} className="p-2.5 bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={16}/></button>}
-                                            </div>
+                                            {isAdmin && (
+                                                <div className="flex gap-1.5 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+                                                    {(isAdmin || isSubmissionOpen) && <button onClick={() => openEditModal(member)} className="p-2.5 bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 rounded-lg transition-colors"><Edit2 size={16}/></button>}
+                                                    {member.email && (
+                                                        <button 
+                                                            onClick={() => handleResetAuth(member.email, member.name)} 
+                                                            title="重設密碼"
+                                                            className="p-2.5 bg-slate-50 hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg transition-colors"
+                                                        >
+                                                            <Unlock size={16}/> 
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => handleDelete(member.id, member.name)} className="p-2.5 bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="space-y-3">
                                             <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
