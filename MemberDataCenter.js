@@ -37,6 +37,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
     const [viewQuarter, setViewQuarter] = useState(initialQuarter); 
     
     const [members, setMembers] = useState([]);
+    const [authEmails, setAuthEmails] = useState(new Set()); // 已在 Authentication 建立帳號(已設定密碼)的 Email
     const [positions, setPositions] = useState([]);
     const [memberPositions, setMemberPositions] = useState([]);
     const [quarterSettings, setQuarterSettings] = useState([]);
@@ -64,6 +65,13 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
     const [formData, setFormData] = useState({ ...DEFAULT_MEMBER, unavailable_weeks: [] });
     const [formPositions, setFormPositions] = useState({}); 
 
+    // 帳號為電話時，系統登入 Email 為「電話@tbc.gmail.com」；帳號本身是 Email 則直接使用
+    const toAuthEmail = (account) => {
+        const v = (account || '').trim().toLowerCase();
+        if (!v) return '';
+        return v.includes('@') ? v : `${v}@tbc.gmail.com`;
+    };
+
     const loadData = async () => {
         setIsLoading(true);
         try {
@@ -77,6 +85,18 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                 fetchAllData(() => supabase.from('member_quarter_settings').select('*').eq('quarter', viewQuarter)),
                 fetchAllData(() => supabase.from('member_quarter_settings').select('*').eq('quarter', 'SYSTEM'))
             ]);
+
+            // 取得 Authentication Users 名單（僅管理員，需 RPC：get_auth_user_emails）
+            if (isAdmin) {
+                try {
+                    const { data: authData, error: authErr } = await supabase.rpc('get_auth_user_emails');
+                    if (authErr) throw authErr;
+                    setAuthEmails(new Set((authData || []).map(r => String(r.email || r).trim().toLowerCase())));
+                } catch (e) {
+                    console.error('讀取 Auth 名單失敗', e);
+                    setAuthEmails(new Set());
+                }
+            }
 
             setMembers(mData || []);
             setPositions(pData || []);
@@ -455,6 +475,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                     if (error) throw error;
                     
                     showMessage('success', `重設 ${name} 密碼完成，請通知同工重新註冊`);
+                    loadData();
                 } catch (err) {
                     showMessage('error', '重設失敗: ' + err.message);
                 } finally {
@@ -813,15 +834,19 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                                             {isAdmin && (
                                                 <div className="flex gap-1.5 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                                                     {(isAdmin || isSubmissionOpen) && <button onClick={() => openEditModal(member)} className="p-2.5 bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 rounded-lg transition-colors"><Edit2 size={16}/></button>}
-                                                    {member.email && (
-                                                        <button 
-                                                            onClick={() => handleResetAuth(member.email, member.name)} 
-                                                            title="重設密碼"
-                                                            className="p-2.5 bg-slate-50 hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg transition-colors"
-                                                        >
-                                                            <Unlock size={16}/> 
-                                                        </button>
-                                                    )}
+                                                    {member.email && (() => {
+                                                        const hasPassword = authEmails.has(toAuthEmail(member.email));
+                                                        return (
+                                                            <button 
+                                                                onClick={() => hasPassword && handleResetAuth(toAuthEmail(member.email), member.name)} 
+                                                                disabled={!hasPassword}
+                                                                title={hasPassword ? '已設定密碼（點擊重設）' : '尚未設定密碼'}
+                                                                className={`p-2.5 bg-slate-50 rounded-lg transition-colors ${hasPassword ? 'hover:bg-amber-50 text-slate-400 hover:text-amber-600' : 'text-slate-300 cursor-default'}`}
+                                                            >
+                                                                {hasPassword ? <Lock size={16}/> : <Unlock size={16}/>}
+                                                            </button>
+                                                        );
+                                                    })()}
                                                     <button onClick={() => handleDelete(member.id, member.name)} className="p-2.5 bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={16}/></button>
                                                 </div>
                                             )}
@@ -1069,7 +1094,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                                                         <span className={`text-base sm:text-sm font-bold ${textClass}`}>{shortDate}</span>
                                                         
                                                         {isSystemBlocked ? (
-                                                            <span className="text-xs font-normal mt-1 text-center leading-tight text-indigo-500">跨團隊服事</span>
+                                                            <span className="text-xs font-normal mt-1 text-center leading-tight text-indigo-500">不便服事日</span>
                                                         ) : holidayName ? (
                                                             <span className={`text-xs font-normal mt-1 text-center leading-tight ${isChecked ? 'text-orange-500' : 'text-slate-400'}`}>{holidayName}</span>
                                                         ) : null}
