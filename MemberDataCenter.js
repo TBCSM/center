@@ -9,6 +9,13 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
     const { fetchAllData, extractAccountFromEmail, generateBaseQuarters, getNextQuarter, getCurrentQuarter, getSundaysInQuarter, getHolidayName } = utils;
     const { ADMIN_ACCOUNT, DEFAULT_MEMBER, SESSION_OPTIONS, STATUS_OPTIONS } = constants;
 
+    // 同工填寫季度：今天 +1 個月所在的季度（9/1–11/30→Q4、12/1–2/28→隔年Q1、3/1–5/31→Q2、6/1–8/31→Q3）
+    const getSubmissionQuarter = () => {
+        const d = new Date();
+        const shifted = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+        return `${shifted.getFullYear()}-Q${Math.floor(shifted.getMonth() / 3) + 1}`;
+    };
+
     const FINAL_STATUS_OPTIONS = [...new Set([
         ...(STATUS_OPTIONS || []), 
         '穩定服事', 
@@ -26,7 +33,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const [quarterOptions, setQuarterOptions] = useState(['BASE']);
-    const initialQuarter = isAdmin ? getCurrentQuarter() : getNextQuarter(getCurrentQuarter());
+    const initialQuarter = isAdmin ? getCurrentQuarter() : getSubmissionQuarter();
     const [viewQuarter, setViewQuarter] = useState(initialQuarter); 
     
     const [members, setMembers] = useState([]);
@@ -260,7 +267,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
             setIsDeleteQuarterModalOpen(false);
             
             if (quartersToDelete.includes(viewQuarter)) {
-                setViewQuarter(isAdmin ? getCurrentQuarter() : getNextQuarter(getCurrentQuarter()));
+                setViewQuarter(isAdmin ? getCurrentQuarter() : getSubmissionQuarter());
             } else {
                 loadData(); 
             }
@@ -1062,7 +1069,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                                                         <span className={`text-base sm:text-sm font-bold ${textClass}`}>{shortDate}</span>
                                                         
                                                         {isSystemBlocked ? (
-                                                            <span className="text-xs font-normal mt-1 text-center leading-tight text-indigo-500">不便服事日</span>
+                                                            <span className="text-xs font-normal mt-1 text-center leading-tight text-indigo-500">跨團隊服事</span>
                                                         ) : holidayName ? (
                                                             <span className={`text-xs font-normal mt-1 text-center leading-tight ${isChecked ? 'text-orange-500' : 'text-slate-400'}`}>{holidayName}</span>
                                                         ) : null}
@@ -1158,9 +1165,11 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                 )}
 
                 {message.text && (
-                    <div className={`fixed top-24 left-1/2 -translate-x-1/2 z-[110] px-5 py-3 rounded-xl font-medium shadow-soft animate-fade-in flex items-start gap-2 max-w-[90vw] w-max ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
+                    <div className="fixed top-24 inset-x-0 z-[110] flex justify-center px-4 pointer-events-none">
+                    <div className={`px-5 py-3 rounded-xl font-medium shadow-soft animate-fade-in flex items-start gap-2 max-w-full w-max ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
                         <div className="shrink-0 mt-0.5">{message.type === 'success' ? <CheckCircle2 size={18}/> : <AlertCircle size={18}/>}</div>
                         <div className="text-sm leading-snug break-words flex-1">{message.text}</div>
+                    </div>
                     </div>
                 )}
                 
