@@ -7,7 +7,7 @@ import {
     Lightbulb, UserCheck, UserX, LayoutList, 
     ArrowUpDown, X, Database, AlertTriangle,
     Home, LogOut, Edit2, Check, ShieldCheck, Undo2, Redo2,
-    ChevronDown, ChevronUp, Plus, Copy, Camera
+    ChevronDown, ChevronUp, Plus, Copy, Camera, MoreVertical, LayoutGrid, Table, Menu
 } from 'lucide-react';
 
 const safeParseJSON = (data, fallback) => {
@@ -73,7 +73,11 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
     const [globalSearchTerm, setGlobalSearchTerm] = useState(''); // 全域指派搜尋框狀態
     const [analysisSearchTerm, setAnalysisSearchTerm] = useState(''); 
     const [gridSearchTerm, setGridSearchTerm] = useState(''); // 班表全域姓名搜尋狀態
-    const [draggedItem, setDraggedItem] = useState(null);
+    const [isReorderMode, setIsReorderMode] = useState(false);
+    const [reorderPick, setReorderPick] = useState(null); // 第一下點選的名牌，等待第二下完成交換
+    const [mobileTableView, setMobileTableView] = useState(false); // 手機版預設卡片檢視；true 時沿用桌機的橫向表格（適合橫向拿手機時看）
+    const [showMobileActionsMenu, setShowMobileActionsMenu] = useState(false); // 手機版「⋯」選單：復原/取消復原/匯出/發布
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false); // 手機版左側導覽列：預設收起，改成點漢堡選單開關
     const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', currentName: '', currentDate: '', currentRole: '', newName: '', newDate: '', newRole: '', type: '', onConfirm: null });
     const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -414,26 +418,36 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
         setRedoStack(prev => prev.slice(0, -1));
     };
 
-    const handleDragStart = useCallback((e, item) => { setDraggedItem(item); e.currentTarget.classList.add('dragging'); }, []);
-    const handleDragEnd = useCallback((e) => { e.currentTarget.classList.remove('dragging'); setDraggedItem(null); }, []);
-    
-    const handleDrop = useCallback((e, targetDate, targetSession, targetPosName, targetIdx) => {
-        e.preventDefault();
-        if (!draggedItem) return;
-        if (draggedItem.service_date !== targetDate || draggedItem.session !== targetSession || draggedItem._positionName !== targetPosName) return;
-        
-        saveDraftSnapshot(); 
+    // 「交換排序」模式：第一下選取，第二下點選同一崗位、同一堂次的另一位同工即完成交換（原拖曳邏輯改為點兩下觸發，桌機、手機共用同一套）
+    const handleReorderTap = useCallback((item, targetDate, targetSession, targetPosName, targetIdx) => {
+        if (item.is_empty) return;
+
+        // 第一下：選取，等待第二下
+        if (!reorderPick) { setReorderPick(item); return; }
+
+        // 再點一次同一個名牌：取消選取
+        if (reorderPick.temp_id === item.temp_id) { setReorderPick(null); return; }
+
+        // 第二下點的不是同一崗位、同一堂次：視為重新選取第一下
+        if (reorderPick.service_date !== targetDate || reorderPick.session !== targetSession || reorderPick._positionName !== targetPosName) {
+            setReorderPick(item);
+            return;
+        }
+
+        saveDraftSnapshot();
 
         setGeneratedDraft(prev => {
             const newDraft = [...prev];
             const group = newDraft.filter(d => d.service_date === targetDate && d.session === targetSession && d._positionName === targetPosName);
-            if(!group[targetIdx]) return prev;
-            const sIdx = newDraft.findIndex(d => d.temp_id === draggedItem.temp_id);
+            if (!group[targetIdx]) return prev;
+            const sIdx = newDraft.findIndex(d => d.temp_id === reorderPick.temp_id);
             const tIdx = newDraft.findIndex(d => d.temp_id === group[targetIdx].temp_id);
             const temp = newDraft[sIdx]; newDraft[sIdx] = newDraft[tIdx]; newDraft[tIdx] = temp;
             return newDraft;
         });
-    }, [draggedItem]);
+        setReorderPick(null);
+    }, [reorderPick]);
+
 
     const handleSubstitute = (newMember) => {
         if (!activeSlot || !newMember) return;
@@ -1529,6 +1543,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
 
     const getTagClass = (item) => {
         let cls = `name-tag ${activeSlot?.temp_id === item.temp_id ? 'active' : ''}`;
+        if (reorderPick?.temp_id === item.temp_id) cls += ' !ring-2 !ring-amber-400 !ring-offset-1';
         
         if (item.is_empty) {
             cls += ' empty-slot';
@@ -1554,6 +1569,20 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
         return cls;
     };
 
+    const NameTag = ({ item, row, positionName, i, mobile = false }) => (
+        <div
+            onClick={() => {
+                if (isReorderMode) {
+                    handleReorderTap(item, row.date, row.session, positionName, i);
+                } else {
+                    setActiveSlot(item); setSearchTerm(''); setGlobalSearchTerm('');
+                }
+            }}
+            // 手機版放大點擊區域：至少 44px 高，符合觸控建議尺寸，避免誤觸相鄰姓名
+            className={`${getTagClass(item)} ${mobile ? '!text-[15px] !px-3 !py-2.5 !min-h-[44px] flex items-center justify-center text-center' : ''}`}
+        >{item._memberName || '未知'}</div>
+    );
+
     const ScheduleCell = ({ row, positionName, gridCols = 1 }) => {
         const items = row.positions[positionName] || [];
         const gridClass = gridCols > 1 ? `grid grid-cols-${gridCols} gap-x-2 gap-y-0.5` : 'flex flex-col gap-0';
@@ -1561,23 +1590,64 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
             <td>
                 <div className={`${gridClass} min-h-[34px] w-max mx-auto`}>
                     {items.map((item, i) => (
-                        <div key={item.temp_id} draggable={!item.is_empty} onDragStart={(e) => handleDragStart(e, item)} onDragEnd={handleDragEnd} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, row.date, row.session, positionName, i)} onClick={() => { setActiveSlot(item); setSearchTerm(''); setGlobalSearchTerm(''); }} className={getTagClass(item)}>{item._memberName || '未知'}</div>
+                        <NameTag key={item.temp_id} item={item} row={row} positionName={positionName} i={i} />
                     ))}
                 </div>
             </td>
         );
     };
 
+    // 手機版卡片檢視：直向捲動、一天一張卡片，不用像表格一樣左右滑動才能看到所有崗位
+    const MobileScheduleList = () => (
+        <div className="flex flex-col gap-3 p-4 pb-24">
+            {rowsToDisplay.length > 0 ? (
+                rowsToDisplay.map((row, idx) => {
+                    const rowPositions = dbData.positions.filter(pos => (row.positions[pos.name] || []).length > 0);
+                    return (
+                        <div key={idx} className="bg-white rounded-xl border border-slate-200 shadow-soft overflow-hidden">
+                            <div className="px-4 py-2.5 bg-slate-100/80 font-semibold text-slate-600 text-sm flex items-center gap-1.5">
+                                <Calendar size={14} className="text-slate-400" /> {row.date}
+                            </div>
+                            {rowPositions.length > 0 ? (
+                                <div className="divide-y divide-slate-100">
+                                    {rowPositions.map(pos => (
+                                        <div key={pos.id} className="px-4 py-3">
+                                            <p className="text-xs font-semibold text-slate-400 mb-2">{pos.name}</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {(row.positions[pos.name] || []).map((item, i) => (
+                                                    <NameTag key={item.temp_id} item={item} row={row} positionName={pos.name} i={i} mobile />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="px-4 py-6 text-center text-slate-400 text-sm">此日尚無排班資料</div>
+                            )}
+                        </div>
+                    );
+                })
+            ) : (
+                <div className="text-center py-16 text-slate-400 font-medium bg-white rounded-xl border border-slate-200">此堂別尚無排班資料</div>
+            )}
+        </div>
+    );
+
     return (
         <div className="flex h-screen w-full bg-slate-50 overflow-hidden select-none relative">
-            <div className="w-64 bg-slate-900 flex flex-col justify-between shrink-0 border-r border-slate-800 z-30">
+            {/* 手機版遮罩：導覽列展開時顯示，點擊可關閉 */}
+            {isSidebarOpen && (
+                <div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>
+            )}
+            {/* 導覽列：手機版預設收在畫面外（off-canvas），點漢堡選單才滑出；桌機（lg 以上）固定顯示，不佔用手機的畫面空間 */}
+            <div className={`fixed inset-y-0 left-0 w-64 bg-slate-900 flex flex-col justify-between shrink-0 border-r border-slate-800 z-40 transform transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="flex flex-col">
                     <div className="p-6 border-b border-slate-800 flex items-center gap-3 relative overflow-hidden"><div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-indigo-500/10 to-transparent pointer-events-none"></div><span className="text-white font-bold text-base tracking-wider relative z-10">TBC Serve Manager</span></div>
                     <nav className="p-4 space-y-1.5">
-                        <button onClick={goBack} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group"><Home size={18} className="text-slate-400 group-hover:text-indigo-400 transition-colors" /><span>Home</span></button>
-                        <button onClick={goToMembers} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group"><Users size={18} className="text-slate-400 group-hover:text-violet-400 transition-colors" /><span>同工資料中心</span></button>
+                        <button onClick={() => { setIsSidebarOpen(false); goBack(); }} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group"><Home size={18} className="text-slate-400 group-hover:text-indigo-400 transition-colors" /><span>Home</span></button>
+                        <button onClick={() => { setIsSidebarOpen(false); goToMembers(); }} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group"><Users size={18} className="text-slate-400 group-hover:text-violet-400 transition-colors" /><span>同工資料中心</span></button>
                         <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-medium text-sm shadow-button"><Calendar size={18} /><span>排班作業中心</span></div>
-                        <button onClick={goToInsights} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group">
+                        <button onClick={() => { setIsSidebarOpen(false); goToInsights(); }} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl font-normal text-sm transition-all text-left group">
                             <BarChart3 size={18} className="text-slate-400 group-hover:text-sky-400 transition-colors" />
                             <span>人力洞察中心</span>
                         </button>
@@ -1586,10 +1656,14 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                 <div className="p-4 border-t border-slate-800"><button onClick={async () => { if (supabase?.auth?.signOut) { await supabase.auth.signOut(); } window.location.reload(); }} className="w-full flex items-center gap-3 px-4 py-3 text-rose-400 hover:text-rose-300 hover:bg-rose-50/10 rounded-xl font-normal text-sm transition-all text-left group"><LogOut size={18} className="text-rose-400 group-hover:translate-x-0.5 transition-transform" /><span>Sign Out</span></button></div>
             </div>
 
-            <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 relative">
+            <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 relative w-full">
                 <div className="p-6 lg:px-8 lg:py-6 bg-white border-b border-slate-200 shrink-0 shadow-sm z-10">
                     {/* 標題區塊 */}
                     <div className="flex items-center gap-3">
+                        {/* 手機版漢堡選單：點擊滑出左側導覽列 */}
+                        <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 shrink-0" title="開啟選單">
+                            <Menu size={22} />
+                        </button>
                         <h2 className="text-2xl font-extrabold text-slate-900 flex items-center gap-3 tracking-tight">
                             {schedulingPhase === 'setup' ? (<><Calendar className="text-violet-600" size={28}/> 排班作業中心</>) : (<div className="flex items-center gap-2"><button onClick={() => { setSchedulingPhase('setup'); setActiveSlot(null); setGlobalSearchTerm(''); setGridSearchTerm(''); }} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="返回設定"><ChevronLeft size={20} /></button><span>{year}Q{quarter} {appMode === 'schedule' ? '預排預覽' : '編輯預覽'}</span></div>)}
                         </h2>
@@ -1600,17 +1674,36 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                         <div className="mt-4 flex flex-col gap-4">
                             {/* 第一行：操作提示與圖例整併 */}
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 pb-3">
-                                {/* 提示文字 */}
-                                <div className="flex items-center gap-4">
-                                    <p className="text-slate-500 text-xs font-medium flex items-center gap-1.5"><Search size={14} className="text-indigo-500"/> 點擊姓名選擇替代人選</p>
-                                    <p className="text-slate-500 text-xs font-medium flex items-center gap-1.5"><GripVertical size={14} className="text-indigo-500"/> 拖曳姓名可交換位置</p>
+                                {/* 提示文字與交換排序模式切換 */}
+                                <div className="flex items-center gap-4 flex-wrap">
+                                    <p className="hidden sm:flex text-slate-500 text-xs font-medium items-center gap-1.5"><Search size={14} className="text-indigo-500"/> 點擊姓名選擇替代人選</p>
+                                    <button
+                                        onClick={() => {
+                                            setIsReorderMode(v => !v);
+                                            setReorderPick(null);
+                                            setActiveSlot(null); setSearchTerm(''); setGlobalSearchTerm('');
+                                        }}
+                                        className={`text-xs font-medium flex items-center gap-1.5 px-2.5 py-1.5 sm:py-1 rounded-md border transition-colors ${isReorderMode ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                                    >
+                                        <GripVertical size={14} className={isReorderMode ? 'text-white' : 'text-indigo-500'}/>
+                                        {isReorderMode ? '交換排序教學：點選同崗位同工完成交換' : '交換排序'}
+                                    </button>
+                                    {/* 手機版：卡片／表格檢視切換（橫向拿手機時可切回表格） */}
+                                    {activeSessionTab !== '📊 數據分析' && (
+                                        <button
+                                            onClick={() => setMobileTableView(v => !v)}
+                                            className="lg:hidden text-xs font-medium flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors"
+                                        >
+                                            {mobileTableView ? <><LayoutGrid size={14} className="text-indigo-500"/> 卡片檢視</> : <><Table size={14} className="text-indigo-500"/> 表格檢視</>}
+                                        </button>
+                                    )}
                                 </div>
                                 
                                 {/* 垂直分隔線 (大螢幕顯示) */}
                                 <div className="hidden sm:block w-px h-3.5 bg-slate-300"></div>
                                 
                                 {/* 狀態圖例 */}
-                                <div className="flex items-center gap-2 flex-wrap">
+                                <div className="hidden sm:flex items-center gap-2 flex-wrap">
                                     <p className="text-rose-600 text-[10px] font-bold flex items-center gap-1 bg-rose-50 px-2 py-1 rounded"><span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> 崗位兼任</p>
                                     <p className="text-sky-600 text-[10px] font-bold flex items-center gap-1 bg-sky-50 px-2 py-1 rounded"><span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span> 群組落單</p>
                                     {appMode === 'schedule' && <p className="text-orange-600 text-[10px] font-bold flex items-center gap-1 bg-orange-50 px-2 py-1 rounded"><span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span> 落單自動替換 / 強制人工指派</p>}
@@ -1622,13 +1715,13 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                                 {/* 左側工具列：堂別 + 重新排班 + 搜尋 */}
                                 <div className="flex items-center bg-slate-50 p-1.5 rounded-lg w-full xl:w-auto overflow-x-auto custom-scrollbar border border-slate-200 shadow-sm">
                                     {['第一堂', '第二堂', '📊 數據分析'].map(tab => (
-                                        <button key={tab} onClick={() => { setActiveSessionTab(tab); if(tab === '📊 數據分析') { setActiveSlot(null); setGlobalSearchTerm(''); } setGridSearchTerm(''); }} className={`px-5 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap shrink-0 ${activeSessionTab === tab ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>{tab}</button>
+                                        <button key={tab} onClick={() => { setActiveSessionTab(tab); if(tab === '📊 數據分析') { setActiveSlot(null); setGlobalSearchTerm(''); } setGridSearchTerm(''); }} className={`px-5 py-2.5 sm:py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap shrink-0 ${activeSessionTab === tab ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>{tab}</button>
                                     ))}
                                     
                                     {appMode === 'schedule' && (
                                         <>
                                             <div className="w-px h-6 bg-slate-200 mx-2 self-center shrink-0"></div>
-                                            <button onClick={runAutoSchedule} disabled={isLoading} className="px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap text-indigo-600 hover:bg-white hover:shadow-sm flex items-center gap-1.5 shrink-0"><RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> 重新排班</button>
+                                            <button onClick={runAutoSchedule} disabled={isLoading} className="px-4 py-2.5 sm:py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap text-indigo-600 hover:bg-white hover:shadow-sm flex items-center gap-1.5 shrink-0"><RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> 重新排班</button>
                                         </>
                                     )}
 
@@ -1643,7 +1736,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                                                     placeholder="搜尋關鍵字" 
                                                     value={gridSearchTerm}
                                                     onChange={(e) => setGridSearchTerm(e.target.value)}
-                                                    className="w-full bg-white border border-slate-200 rounded-md pl-8 pr-6 py-1.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all shadow-sm"
+                                                    className="w-full bg-white border border-slate-200 rounded-md pl-8 pr-6 py-2 sm:py-1.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all shadow-sm"
                                                 />
                                                 {gridSearchTerm && (
                                                     <button 
@@ -1658,8 +1751,8 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                                     )}
                                 </div>
 
-                                {/* 右側工具列：復原、匯出、發布 */}
-                                <div className="flex items-center bg-slate-50 p-1.5 rounded-lg w-full xl:w-auto overflow-x-auto custom-scrollbar border border-slate-200 shadow-sm shrink-0">
+                                {/* 右側工具列：桌機（sm 以上）直接攤開；手機收進「⋯」選單，避免誤觸發布 */}
+                                <div className="hidden sm:flex items-center bg-slate-50 p-1.5 rounded-lg w-full xl:w-auto overflow-x-auto custom-scrollbar border border-slate-200 shadow-sm shrink-0">
                                     <button 
                                         onClick={handleUndo} 
                                         disabled={undoStack.length === 0} 
@@ -1680,8 +1773,52 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                                     <button onClick={exportToCSV} className="px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap text-emerald-600 hover:bg-white hover:shadow-sm flex items-center gap-1.5 shrink-0"><Download size={16} /> 匯出 CSV</button>
                                     <button onClick={handlePublishClick} disabled={isSaving} className="px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-button hover:-translate-y-0.5 flex items-center gap-1.5 shrink-0 disabled:from-indigo-400 disabled:to-violet-400">{isSaving ? <RefreshCw className="animate-spin" size={16} /> : <><Save size={16}/> 發布班表</>}</button>
                                 </div>
+
+                                {/* 手機版「⋯」選單：改成從螢幕底部滑出的操作面板，不依附在按鈕旁邊，避免被上層容器裁切或跑位 */}
+                                <div className="relative sm:hidden shrink-0">
+                                    <button
+                                        onClick={() => setShowMobileActionsMenu(true)}
+                                        className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 shadow-sm"
+                                        title="更多操作"
+                                    >
+                                        <MoreVertical size={20} />
+                                    </button>
+                                </div>
                             </div>
                         </div>
+                    )}
+                    {/* 手機版底部操作面板：復原/取消復原/匯出/發布，用 fixed 貼齊視窗，不會被任何父層 overflow 裁切 */}
+                    {showMobileActionsMenu && (
+                        <>
+                            <div className="fixed inset-0 bg-black/40 z-40 sm:hidden" onClick={() => setShowMobileActionsMenu(false)}></div>
+                            <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden bg-white rounded-t-2xl border-t border-slate-200 shadow-2xl overflow-hidden pb-[env(safe-area-inset-bottom,12px)]">
+                                <div className="flex justify-center pt-2.5 pb-1"><div className="w-10 h-1 rounded-full bg-slate-200"></div></div>
+                                <p className="px-4 pb-2 text-xs font-semibold text-slate-400">更多操作</p>
+                                <button
+                                    onClick={() => { handleUndo(); setShowMobileActionsMenu(false); }}
+                                    disabled={undoStack.length === 0}
+                                    className="w-full flex items-center gap-3 px-5 py-3.5 text-[15px] text-slate-700 active:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-left border-t border-slate-100"
+                                ><Undo2 size={18}/> 復原</button>
+                                <button
+                                    onClick={() => { handleRedo(); setShowMobileActionsMenu(false); }}
+                                    disabled={redoStack.length === 0}
+                                    className="w-full flex items-center gap-3 px-5 py-3.5 text-[15px] text-slate-700 active:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-left border-t border-slate-100"
+                                ><Redo2 size={18}/> 取消復原</button>
+                                <button
+                                    onClick={() => { exportToCSV(); setShowMobileActionsMenu(false); }}
+                                    className="w-full flex items-center gap-3 px-5 py-3.5 text-[15px] text-emerald-600 active:bg-emerald-50 text-left border-t border-slate-100"
+                                ><Download size={18}/> 匯出 CSV</button>
+                                <button
+                                    onClick={() => { setShowMobileActionsMenu(false); handlePublishClick(); }}
+                                    disabled={isSaving}
+                                    className="w-full flex items-center gap-3 px-5 py-3.5 text-[15px] font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 text-left disabled:opacity-60 border-t border-slate-100"
+                                >{isSaving ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18}/>} 發布班表</button>
+                                <button
+                                    onClick={() => setShowMobileActionsMenu(false)}
+                                    className="w-full px-5 py-3.5 text-[15px] font-medium text-slate-400 active:bg-slate-50 text-center border-t border-slate-100"
+                                >取消</button>
+                            </div>
+                        </>
                     )}
                 </div>
                 
@@ -1690,7 +1827,8 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                         {schedulingPhase === 'setup' ? renderSchedulingView() : (
                             activeSessionTab === '📊 數據分析' ? renderOriginalDataAnalysis() : (
                                 <div className="flex flex-col h-full bg-slate-50 relative">
-                                    <div className="overflow-x-auto shadow-inner bg-slate-50/50 custom-scrollbar flex-1 p-6 relative">
+                                    {/* 桌機（lg 以上）固定用橫向表格；手機預設卡片，可用下方切換鈕改看橫向表格 */}
+                                    <div className={`${mobileTableView ? 'block' : 'hidden'} lg:block overflow-x-auto shadow-inner bg-slate-50/50 custom-scrollbar flex-1 p-6 relative`}>
                                         <table className="w-max schedule-table border-collapse min-w-full mx-auto bg-white rounded-xl overflow-hidden shadow-soft">
                                             <thead>
                                                 <tr>
@@ -1716,6 +1854,10 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                                                 ) : (<tr><td colSpan={dbData.positions.length + 1} className="text-center py-16 text-slate-400 font-medium bg-white">此堂別尚無排班資料</td></tr>)}
                                             </tbody>
                                         </table>
+                                    </div>
+                                    {/* 手機卡片檢視：只在 lg 以下、且未手動切成表格時顯示 */}
+                                    <div className={`${mobileTableView ? 'hidden' : 'block'} lg:hidden overflow-y-auto flex-1`}>
+                                        <MobileScheduleList />
                                     </div>
                                 </div>
                             )
