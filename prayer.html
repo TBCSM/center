@@ -55,6 +55,7 @@
             { id: 'all', label: '全部' },
             { id: 'kingdom', label: '國度' },
             { id: 'outreach', label: '宣教' },
+            { id: 'church', label: '教會' },
             { id: 'fellowship', label: '團契' },
             { id: 'personal', label: '個人' },
         ];
@@ -68,7 +69,25 @@
         };
         const ACTION_LABEL = {
             submitted: '提報', approved: '核准', returned: '退回',
-            resubmitted: '修改後重新送審', visibility_changed: '公開設定變更',
+            resubmitted: '編輯重新送審', visibility_changed: '誰可以看到貼文變更',
+            category_changed: '分類變更',
+        };
+
+        // 訪客代號：每個瀏覽器一組隨機代號，存在本機，用來避免同一人對同一則重複回應。
+        // 不需要登入，也不含任何個人資料。若瀏覽器不允許儲存，就只在這次開啟頁面期間有效。
+        let memoryVisitorId = null;
+        const makeUuid = () => (window.crypto && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
+        const getVisitorId = () => {
+            try {
+                let id = localStorage.getItem('tbc_prayer_visitor');
+                if (!id || !/^[0-9a-f-]{36}$/i.test(id)) { id = makeUuid(); localStorage.setItem('tbc_prayer_visitor', id); }
+                return id;
+            } catch (e) {
+                if (!memoryVisitorId) memoryVisitorId = makeUuid();
+                return memoryVisitorId;
+            }
         };
         const REVIEWER_ROLES = ['admin', 'leader', 'pastor'];
 
@@ -114,8 +133,10 @@
             return data;
         };
         const api = {
-            search: async (keyword, category) => (await rpc('search_public_prayers', { p_keyword: keyword, p_category: category })) || [],
-            detail: async (id) => { const d = await rpc('get_public_prayer', { p_id: id }); return (d && d[0]) || null; },
+            search: async (keyword, category) => (await rpc('search_public_prayers', { p_keyword: keyword, p_category: category, p_visitor: getVisitorId() })) || [],
+            detail: async (id) => { const d = await rpc('get_public_prayer', { p_id: id, p_visitor: getVisitorId() }); return (d && d[0]) || null; },
+            respond: async (postId) => { const d = await rpc('respond_prayer', { p_post_id: postId, p_visitor: getVisitorId() }); return d && d[0]; },
+            setCategory: (id, category) => rpc('set_prayer_category', { p_id: id, p_category: category }),
             submit: (v) => rpc('submit_prayer', { p_title: v.title, p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
             resubmit: (id, v) => rpc('resubmit_prayer', { p_id: id, p_title: v.title, p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
             approve: (id, isPublic) => rpc('approve_prayer', { p_id: id, p_is_public: isPublic }),
@@ -291,6 +312,40 @@
         };
 
         // ==========================================
+        // 「我已禱告」按鈕（免登入；一次、不可取消；次數由資料庫計算）
+        // ==========================================
+        const PrayButton = ({ postId, count, responded, onResponded }) => {
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+
+            const click = async () => {
+                setBusy(true); setError('');
+                try {
+                    const r = await api.respond(postId);
+                    onResponded(Number(r?.response_count ?? count + 1));
+                } catch (err) {
+                    setError(err.message || '暫時無法送出，請稍後再試');
+                } finally { setBusy(false); }
+            };
+
+            return (
+                <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                        {responded ? (
+                            <span className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                                <CheckIcon size={16} /> 已禱告
+                            </span>
+                        ) : (
+                            <button type="button" onClick={click} disabled={busy} className={btnPrimary}>{busy ? '送出中…' : '我已禱告'}</button>
+                        )}
+                        <span className="text-xs text-zinc-500">禱告回應次數 <span className="font-mono tabular-nums font-bold text-zinc-800">{count}</span></span>
+                    </div>
+                    <InlineError message={error} />
+                </div>
+            );
+        };
+
+        // ==========================================
         // 首頁：搜尋 + 結果
         // ==========================================
         const HomeView = ({ openDetail }) => {
@@ -341,9 +396,9 @@
                         {status === 'ok' && results.length > 0 && (
                             <ul className="flex flex-col gap-4">
                                 {results.map(p => (
-                                    <li key={p.id}>
+                                    <li key={p.id} className="bg-white rounded-xl border border-zinc-200 shadow-sm">
                                         <button type="button" onClick={() => openDetail(p.id)}
-                                            className={`w-full text-left bg-white p-5 sm:p-6 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 active:bg-zinc-50 shadow-sm transition-colors duration-150 ${focusRing}`}>
+                                            className={`w-full text-left p-5 sm:p-6 pb-4 rounded-t-xl hover:bg-zinc-50/60 active:bg-zinc-50 transition-colors duration-150 ${focusRing}`}>
                                             <div className="flex items-start justify-between gap-3 mb-2">
                                                 <h4 className="text-lg font-black text-zinc-900 leading-snug">{p.title}</h4>
                                                 <CategoryBadge id={p.category} />
@@ -354,6 +409,10 @@
                                                 <span className="tabular-nums font-mono">{formatDate(p.created_at)}</span>
                                             </div>
                                         </button>
+                                        <div className="mx-5 sm:mx-6 pb-5 sm:pb-6 pt-4 border-t border-zinc-100">
+                                            <PrayButton postId={p.id} count={Number(p.response_count) || 0} responded={!!p.has_responded}
+                                                onResponded={(n) => setResults(list => list.map(x => x.id === p.id ? { ...x, response_count: n, has_responded: true } : x))} />
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
@@ -380,7 +439,7 @@
             useEffect(() => { load(); }, [load]);
 
             return (
-                <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}>
+                <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}>
                     {status === 'loading' && (
                         <div className="bg-white p-6 sm:p-8 rounded-2xl border border-zinc-200 animate-pulse" aria-hidden="true">
                             <div className="h-7 w-2/3 bg-zinc-200 rounded mb-6"></div>
@@ -390,12 +449,16 @@
                         </div>
                     )}
                     {status === 'error' && <ErrorBox message="暫時無法載入這則禱告，請稍後再試" onRetry={load} />}
-                    {status === 'notfound' && <EmptyBox message="這則禱告不存在，或目前不開放瀏覽" action={<button onClick={goHome} className={btnDark}>回到搜尋</button>} />}
+                    {status === 'notfound' && <EmptyBox message="這則禱告不存在，或目前不開放瀏覽" action={<button onClick={goHome} className={btnDark}>回到禱告牆</button>} />}
                     {status === 'ok' && post && (
                         <article className="bg-white p-6 sm:p-8 rounded-2xl border border-zinc-200 shadow-sm">
                             <div className="mb-4"><CategoryBadge id={post.category} /></div>
                             <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight leading-snug mb-6">{post.title}</h2>
                             <p className="text-zinc-700 leading-loose whitespace-pre-line mb-8 max-w-prose">{post.content}</p>
+                            <div className="mb-6">
+                                <PrayButton postId={post.id} count={Number(post.response_count) || 0} responded={!!post.has_responded}
+                                    onResponded={(n) => setPost(p => ({ ...p, response_count: n, has_responded: true }))} />
+                            </div>
                             <div className="pt-4 border-t border-zinc-100 text-xs text-zinc-500 flex items-center gap-2">
                                 <span>提報：{post.display_name}</span><span aria-hidden="true">·</span>
                                 <span className="tabular-nums font-mono">{formatDate(post.created_at)}</span>
@@ -448,7 +511,7 @@
                     </fieldset>
 
                     <fieldset className="flex flex-col gap-2">
-                        <legend className="text-sm font-bold text-zinc-700 mb-1">公開設定</legend>
+                        <legend className="text-sm font-bold text-zinc-700 mb-1">誰可以看到貼文</legend>
                         <div className="flex flex-col sm:flex-row gap-3">
                             <RadioCard name="is_public" checked={v.is_public === true} onChange={() => set('is_public', true)} title="公開" hint="核准後，所有人都能搜尋到" />
                             <RadioCard name="is_public" checked={v.is_public === false} onChange={() => set('is_public', false)} title="不公開" hint="只有牧師、區長與你本人看得到" />
@@ -456,7 +519,7 @@
                     </fieldset>
 
                     <fieldset className="flex flex-col gap-2">
-                        <legend className="text-sm font-bold text-zinc-700 mb-1">提報者顯示方式</legend>
+                        <legend className="text-sm font-bold text-zinc-700 mb-1">隱私設定</legend>
                         <div className="flex flex-col sm:flex-row gap-3">
                             <RadioCard name="show_name" checked={v.show_name === false} onChange={() => set('show_name', false)} title="匿名" hint="卡片上顯示「匿名」" />
                             <RadioCard name="show_name" checked={v.show_name === true} onChange={() => set('show_name', true)} title="顯示我的姓名" hint="卡片上顯示你的姓名" />
@@ -478,7 +541,7 @@
         const SubmitView = ({ session, onLogin, goMine, goHome, notify }) => {
             const [busy, setBusy] = useState(false);
             const [error, setError] = useState('');
-            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><NeedLogin onLogin={onLogin} /></PageShell>;
+            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><NeedLogin onLogin={onLogin} /></PageShell>;
 
             const handle = async (values) => {
                 setBusy(true); setError('');
@@ -490,23 +553,23 @@
                 finally { setBusy(false); }
             };
             return (
-                <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}>
-                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">提報貼文</h2>
-                    <p className="text-sm text-zinc-500 mb-6">送出後會由牧師或區長審查，通過後才會依你選的公開設定顯示。</p>
-                    <PostForm initial={EMPTY_FORM} submitLabel="送出提報" busy={busy} error={error} onSubmit={handle} onCancel={goHome} />
+                <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">貼文</h2>
+                    <p className="text-sm text-zinc-500 mb-6">審查通過後依設定顯示；若通知退回，修正後可以再次送審，請耐心等候。</p>
+                    <PostForm initial={EMPTY_FORM} submitLabel="送出" busy={busy} error={error} onSubmit={handle} onCancel={goHome} />
                 </PageShell>
             );
         };
 
         // ==========================================
-        // 審查歷程
+        // 審查紀錄
         // ==========================================
         const HistoryList = ({ postId }) => {
             const [logs, setLogs] = useState(null);
             const [error, setError] = useState('');
             useEffect(() => {
                 let alive = true;
-                api.logsOfPost(postId).then(d => alive && setLogs(d)).catch(() => alive && setError('無法載入審查歷程'));
+                api.logsOfPost(postId).then(d => alive && setLogs(d)).catch(() => alive && setError('無法載入審查紀錄'));
                 return () => { alive = false; };
             }, [postId]);
             if (error) return <p className="text-sm text-red-600">{error}</p>;
@@ -520,7 +583,7 @@
                                 <span className="text-zinc-500">{l.actor_name}</span>
                                 <span className="text-xs text-zinc-400 font-mono tabular-nums">{formatDateTime(l.created_at)}</span>
                             </div>
-                            {l.reason && <p className="text-zinc-600 mt-0.5 whitespace-pre-line">{l.reason}</p>}
+                            {l.reason && <p className="text-zinc-600 mt-0.5 whitespace-pre-line">{l.reason.replace(/公開設定/g, '誰可以看到貼文')}</p>}
                         </li>
                     ))}
                 </ol>
@@ -549,7 +612,7 @@
             }, [session?.user?.id]);
             useEffect(() => { load(); }, [load]);
 
-            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><NeedLogin onLogin={onLogin} /></PageShell>;
+            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><NeedLogin onLogin={onLogin} /></PageShell>;
 
             const tabs = [{ id: 'all', label: '全部' }, { id: 'pending', label: '待審查' }, { id: 'approved', label: '已核准' }, { id: 'returned', label: '已退回' }];
             const shown = tab === 'all' ? posts : posts.filter(p => p.review_status === tab);
@@ -558,7 +621,7 @@
                 <PageShell>
                     <div className="flex items-end justify-between gap-4 mb-6">
                         <h2 className="text-2xl font-black text-zinc-900 tracking-tight">我的禱告</h2>
-                        <button onClick={goSubmit} className={btnPrimary}>提報貼文</button>
+                        <button onClick={goSubmit} className={btnPrimary}>貼文</button>
                     </div>
                     {flash && <div role="status" className="flex items-start gap-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2.5 mb-6"><span className="mt-0.5 shrink-0"><CheckIcon size={16} /></span>{flash}</div>}
                     <TabBar tabs={tabs} value={tab} onChange={setTab} />
@@ -586,8 +649,8 @@
                                         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-zinc-100">
                                             <span className="text-xs text-zinc-400 font-mono tabular-nums">{formatDate(p.created_at)}</span>
                                             <div className="flex gap-2">
-                                                <button onClick={() => setOpenHistory(openHistory === p.id ? null : p.id)} className={btnOutline}>{openHistory === p.id ? '收合歷程' : '審查歷程'}</button>
-                                                {p.review_status === 'returned' && <button onClick={() => goEdit(p.id)} className={btnPrimary}>修改並重新送審</button>}
+                                                <button onClick={() => setOpenHistory(openHistory === p.id ? null : p.id)} className={btnOutline}>{openHistory === p.id ? '收合紀錄' : '審查紀錄'}</button>
+                                                {p.review_status === 'returned' && <button onClick={() => goEdit(p.id)} className={btnPrimary}>編輯重新送審</button>}
                                             </div>
                                         </div>
                                         {openHistory === p.id && <div className="mt-4"><HistoryList postId={p.id} /></div>}
@@ -638,7 +701,7 @@
 
             return (
                 <PageShell back={<BackButton onClick={goMine} label="返回我的禱告" />}>
-                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">修改並重新送審</h2>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">編輯重新送審</h2>
                     {status === 'loading' && <Skeletons />}
                     {status === 'error' && <ErrorBox message="暫時無法載入，請稍後再試" />}
                     {status === 'notfound' && <EmptyBox message="找不到這則禱告，或它目前不是「已退回」狀態" action={<button onClick={goMine} className={btnDark}>回到我的禱告</button>} />}
@@ -685,10 +748,23 @@
 
                     {(
                         <div className="flex flex-col gap-4 pt-4 border-t border-zinc-100">
+                            <fieldset className="flex flex-col gap-2">
+                                <legend className="text-xs font-bold text-zinc-500 mb-1">分類（可調整，會留下審查紀錄）</legend>
+                                <div className="flex flex-wrap gap-2">
+                                    {SUBMIT_CATEGORIES.map(c => {
+                                        const active = post.category === c.id;
+                                        return (
+                                            <button key={c.id} type="button" aria-pressed={active} disabled={busy}
+                                                onClick={() => { if (!active) run(() => api.setCategory(post.id, c.id)); }}
+                                                className={`px-4 py-2 rounded-lg text-sm font-bold border transition-colors duration-150 active:scale-[0.98] ${disabledCls} ${focusRing} ${active ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'}`}>{c.label}</button>
+                                        );
+                                    })}
+                                </div>
+                            </fieldset>
                             {post.review_status === 'pending' && (
                                 <>
                                     <fieldset className="flex flex-col gap-2">
-                                        <legend className="text-xs font-bold text-zinc-500 mb-1">核准後的公開設定</legend>
+                                        <legend className="text-xs font-bold text-zinc-500 mb-1">核准後誰可以看到貼文</legend>
                                         <div className="flex gap-3">
                                             <RadioCard name={`pub-${post.id}`} checked={isPublic === true} onChange={() => setIsPublic(true)} title="公開" hint="所有人可搜尋" />
                                             <RadioCard name={`pub-${post.id}`} checked={isPublic === false} onChange={() => setIsPublic(false)} title="不公開" hint="僅審查者與本人" />
@@ -723,7 +799,7 @@
                     )}
 
                     <div className="pt-3">
-                        <button onClick={() => setShowHistory(s => !s)} className={`text-sm font-bold text-zinc-500 hover:text-zinc-900 rounded px-1 -ml-1 transition-colors duration-150 ${focusRing}`}>{showHistory ? '收合審查歷程' : '查看審查歷程'}</button>
+                        <button onClick={() => setShowHistory(s => !s)} className={`text-sm font-bold text-zinc-500 hover:text-zinc-900 rounded px-1 -ml-1 transition-colors duration-150 ${focusRing}`}>{showHistory ? '收合審查紀錄' : '查看審查紀錄'}</button>
                         {showHistory && <div className="mt-3"><HistoryList postId={post.id} /></div>}
                     </div>
                 </li>
@@ -742,8 +818,8 @@
             }, [tab]);
             useEffect(() => { if (session && REVIEWER_ROLES.includes(role)) load(); }, [load, session, role]);
 
-            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><NeedLogin onLogin={onLogin} /></PageShell>;
-            if (!REVIEWER_ROLES.includes(role)) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><EmptyBox message="只有牧師與區長可以進入審查頁" /></PageShell>;
+            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><NeedLogin onLogin={onLogin} /></PageShell>;
+            if (!REVIEWER_ROLES.includes(role)) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><EmptyBox message="只有牧師與區長可以進入審查頁" /></PageShell>;
 
             const tabs = [{ id: 'pending', label: '待審查' }, { id: 'approved', label: '已核准' }, { id: 'returned', label: '已退回' }];
             const onChanged = async () => { await load(); refreshPending(); };
@@ -781,7 +857,7 @@
             }, [session?.user?.id]);
             useEffect(() => { load(); }, [load]);
 
-            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><NeedLogin onLogin={onLogin} /></PageShell>;
+            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><NeedLogin onLogin={onLogin} /></PageShell>;
 
             const unread = items.filter(n => !n.is_read).length;
 
@@ -929,8 +1005,8 @@
             const requireLogin = (hash) => { if (!session) setShowLogin(true); else go(hash); };
 
             const navItems = [
-                { id: 'home', label: '搜尋', onClick: goHome },
-                { id: 'submit', label: '提報貼文', onClick: () => requireLogin('#/submit') },
+                { id: 'home', label: '禱告牆', onClick: goHome },
+                { id: 'submit', label: '貼文', onClick: () => requireLogin('#/submit') },
                 ...(session ? [{ id: 'mine', label: '我的禱告', onClick: goMine }] : []),
                 ...(isReviewer ? [{ id: 'review', label: '審查', badge: pending, onClick: () => go('#/review') }] : []),
             ];
