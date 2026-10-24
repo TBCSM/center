@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>守望代禱 - TBC Serve</title>
+    <title>守望禱告 - TBC Serve</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -54,7 +54,7 @@
         const CATEGORIES = [
             { id: 'all', label: '全部' },
             { id: 'kingdom', label: '國度' },
-            { id: 'outreach', label: '外展' },
+            { id: 'outreach', label: '宣教' },
             { id: 'fellowship', label: '團契' },
             { id: 'personal', label: '個人' },
         ];
@@ -103,6 +103,7 @@
         const InboxIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1Z" /></React.Fragment>} />;
         const LockIcon = (p) => <Icon {...p} d={<React.Fragment><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></React.Fragment>} />;
         const CheckIcon = (p) => <Icon {...p} d={<path d="M20 6 9 17l-5-5" />} />;
+        const BellIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></React.Fragment>} />;
 
         // ==========================================
         // 資料存取：全部透過資料庫的窗口（函式）或受警衛規則保護的查詢
@@ -143,6 +144,18 @@
                 (data || []).forEach(l => { map[l.post_id] = l; }); // 依時間排序，最後一筆就是最新的
                 return map;
             },
+            notifications: async () => {
+                const { data, error } = await supabase.from('prayer_notifications').select('*').order('created_at', { ascending: false }).limit(100);
+                if (error) throw error;
+                return data || [];
+            },
+            unreadCount: async () => {
+                const { count, error } = await supabase.from('prayer_notifications').select('id', { count: 'exact', head: true }).eq('is_read', false);
+                if (error) throw error;
+                return count || 0;
+            },
+            markRead: (id) => rpc('mark_prayer_notification_read', { p_id: id }),
+            markAllRead: () => rpc('mark_all_prayer_notifications_read', {}),
             pendingCount: async () => {
                 const { count, error } = await supabase.from('prayer_posts').select('id', { count: 'exact', head: true }).eq('review_status', 'pending');
                 if (error) throw error;
@@ -323,8 +336,8 @@
 
                     <section aria-live="polite">
                         {status === 'loading' && <Skeletons />}
-                        {status === 'error' && <ErrorBox message="暫時無法載入代禱事項，請稍後再試" onRetry={() => load(applied)} />}
-                        {status === 'ok' && results.length === 0 && <EmptyBox message="找不到符合條件的代禱事項，請嘗試其他關鍵字" />}
+                        {status === 'error' && <ErrorBox message="暫時無法載入禱告事項，請稍後再試" onRetry={() => load(applied)} />}
+                        {status === 'ok' && results.length === 0 && <EmptyBox message="找不到符合條件的禱告事項，請嘗試其他關鍵字" />}
                         {status === 'ok' && results.length > 0 && (
                             <ul className="flex flex-col gap-4">
                                 {results.map(p => (
@@ -376,8 +389,8 @@
                             <div className="h-4 w-3/5 bg-zinc-100 rounded"></div>
                         </div>
                     )}
-                    {status === 'error' && <ErrorBox message="暫時無法載入這則代禱，請稍後再試" onRetry={load} />}
-                    {status === 'notfound' && <EmptyBox message="這則代禱不存在，或目前不開放瀏覽" action={<button onClick={goHome} className={btnDark}>回到搜尋</button>} />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入這則禱告，請稍後再試" onRetry={load} />}
+                    {status === 'notfound' && <EmptyBox message="這則禱告不存在，或目前不開放瀏覽" action={<button onClick={goHome} className={btnDark}>回到搜尋</button>} />}
                     {status === 'ok' && post && (
                         <article className="bg-white p-6 sm:p-8 rounded-2xl border border-zinc-200 shadow-sm">
                             <div className="mb-4"><CategoryBadge id={post.category} /></div>
@@ -471,14 +484,14 @@
                 setBusy(true); setError('');
                 try {
                     await api.submit(values);
-                    notify('已送出，這則代禱現在是「待審查」，審查通過後才會公開。');
+                    notify('已送出，這則禱告現在是「待審查」，審查通過後才會公開。');
                     goMine();
                 } catch (err) { setError(err.message || '送出失敗，請稍後再試'); }
                 finally { setBusy(false); }
             };
             return (
                 <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}>
-                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">提報代禱</h2>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">提報貼文</h2>
                     <p className="text-sm text-zinc-500 mb-6">送出後會由牧師或區長審查，通過後才會依你選的公開設定顯示。</p>
                     <PostForm initial={EMPTY_FORM} submitLabel="送出提報" busy={busy} error={error} onSubmit={handle} onCancel={goHome} />
                 </PageShell>
@@ -515,7 +528,7 @@
         };
 
         // ==========================================
-        // 我的代禱
+        // 我的禱告
         // ==========================================
         const MineView = ({ session, onLogin, goHome, goEdit, goSubmit, flash }) => {
             const [tab, setTab] = useState('all');
@@ -532,7 +545,7 @@
                     setPosts(list);
                     setReasons(await api.latestReturnReasons(list.filter(p => p.review_status === 'returned').map(p => p.id)));
                     setStatus('ok');
-                } catch (err) { console.error('讀取我的代禱失敗:', err); setStatus('error'); }
+                } catch (err) { console.error('讀取我的禱告失敗:', err); setStatus('error'); }
             }, [session?.user?.id]);
             useEffect(() => { load(); }, [load]);
 
@@ -544,15 +557,15 @@
             return (
                 <PageShell>
                     <div className="flex items-end justify-between gap-4 mb-6">
-                        <h2 className="text-2xl font-black text-zinc-900 tracking-tight">我的代禱</h2>
-                        <button onClick={goSubmit} className={btnPrimary}>提報代禱</button>
+                        <h2 className="text-2xl font-black text-zinc-900 tracking-tight">我的禱告</h2>
+                        <button onClick={goSubmit} className={btnPrimary}>提報貼文</button>
                     </div>
                     {flash && <div role="status" className="flex items-start gap-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2.5 mb-6"><span className="mt-0.5 shrink-0"><CheckIcon size={16} /></span>{flash}</div>}
                     <TabBar tabs={tabs} value={tab} onChange={setTab} />
 
                     {status === 'loading' && <Skeletons />}
-                    {status === 'error' && <ErrorBox message="暫時無法載入你的代禱，請稍後再試" onRetry={load} />}
-                    {status === 'ok' && shown.length === 0 && <EmptyBox message={tab === 'all' ? '你還沒有提報過代禱' : '這個分類目前沒有代禱'} action={tab === 'all' ? <button onClick={goSubmit} className={btnDark}>提報第一則代禱</button> : null} />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入你的禱告，請稍後再試" onRetry={load} />}
+                    {status === 'ok' && shown.length === 0 && <EmptyBox message={tab === 'all' ? '你還沒有提報過禱告' : '這個分類目前沒有禱告'} action={tab === 'all' ? <button onClick={goSubmit} className={btnDark}>提報第一則禱告</button> : null} />}
                     {status === 'ok' && shown.length > 0 && (
                         <ul className="flex flex-col gap-4">
                             {shown.map(p => {
@@ -624,11 +637,11 @@
             };
 
             return (
-                <PageShell back={<BackButton onClick={goMine} label="返回我的代禱" />}>
+                <PageShell back={<BackButton onClick={goMine} label="返回我的禱告" />}>
                     <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">修改並重新送審</h2>
                     {status === 'loading' && <Skeletons />}
                     {status === 'error' && <ErrorBox message="暫時無法載入，請稍後再試" />}
-                    {status === 'notfound' && <EmptyBox message="找不到這則代禱，或它目前不是「已退回」狀態" action={<button onClick={goMine} className={btnDark}>回到我的代禱</button>} />}
+                    {status === 'notfound' && <EmptyBox message="找不到這則禱告，或它目前不是「已退回」狀態" action={<button onClick={goMine} className={btnDark}>回到我的禱告</button>} />}
                     {status === 'ok' && post && (
                         <PostForm
                             initial={{ title: post.title, content: post.content, category: post.category, is_public: post.is_public, show_name: post.show_name }}
@@ -642,14 +655,13 @@
         // 審查頁（牧師、區長、admin）
         // 這裡的按鈕只是方便使用；真正的權限由資料庫檢查
         // ==========================================
-        const ReviewCard = ({ post, session, isAdmin, onChanged }) => {
+        const ReviewCard = ({ post, onChanged }) => {
             const [isPublic, setIsPublic] = useState(post.is_public);
             const [returning, setReturning] = useState(false);
             const [reason, setReason] = useState('');
             const [showHistory, setShowHistory] = useState(false);
             const [busy, setBusy] = useState(false);
             const [error, setError] = useState('');
-            const isOwn = post.author_uid === session.user.id && !isAdmin;
 
             const run = async (fn) => {
                 setBusy(true); setError('');
@@ -671,9 +683,7 @@
                         <span className="font-mono tabular-nums">{formatDateTime(post.created_at)}</span>
                     </div>
 
-                    {isOwn ? (
-                        <p className="text-sm text-zinc-500 bg-zinc-50 border border-zinc-100 rounded-lg px-3 py-2.5 mb-2">這是你自己提報的代禱，需由其他審查者處理。</p>
-                    ) : (
+                    {(
                         <div className="flex flex-col gap-4 pt-4 border-t border-zinc-100">
                             {post.review_status === 'pending' && (
                                 <>
@@ -740,14 +750,98 @@
 
             return (
                 <PageShell>
-                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">審查代禱</h2>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">審查禱告</h2>
                     <TabBar tabs={tabs} value={tab} onChange={setTab} />
                     {status === 'loading' && <Skeletons />}
                     {status === 'error' && <ErrorBox message="暫時無法載入審查清單，請稍後再試" onRetry={load} />}
-                    {status === 'ok' && posts.length === 0 && <EmptyBox message={tab === 'pending' ? '目前沒有待審查的代禱' : '這個分類目前沒有代禱'} />}
+                    {status === 'ok' && posts.length === 0 && <EmptyBox message={tab === 'pending' ? '目前沒有待審查的禱告' : '這個分類目前沒有禱告'} />}
                     {status === 'ok' && posts.length > 0 && (
                         <ul className="flex flex-col gap-4">
-                            {posts.map(p => <ReviewCard key={p.id} post={p} session={session} isAdmin={role === 'admin'} onChanged={onChanged} />)}
+                            {posts.map(p => <ReviewCard key={p.id} post={p} onChanged={onChanged} />)}
+                        </ul>
+                    )}
+                </PageShell>
+            );
+        };
+
+        // ==========================================
+        // 通知頁（站內通知：貼文被退回時，提報者會收到）
+        // ==========================================
+        const NotificationsView = ({ session, onLogin, goHome, goEdit, refreshUnread }) => {
+            const [items, setItems] = useState([]);
+            const [status, setStatus] = useState('loading');
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+
+            const load = useCallback(async () => {
+                if (!session) return;
+                setStatus('loading');
+                try { setItems(await api.notifications()); setStatus('ok'); }
+                catch (err) { console.error('讀取通知失敗:', err); setStatus('error'); }
+            }, [session?.user?.id]);
+            useEffect(() => { load(); }, [load]);
+
+            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><NeedLogin onLogin={onLogin} /></PageShell>;
+
+            const unread = items.filter(n => !n.is_read).length;
+
+            const open = async (n) => {
+                if (!n.is_read) {
+                    try { await api.markRead(n.id); refreshUnread(); } catch (err) { console.error(err); }
+                }
+                goEdit(n.post_id);
+            };
+            const markOne = async (n) => {
+                setError('');
+                try {
+                    await api.markRead(n.id);
+                    setItems(list => list.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+                    refreshUnread();
+                } catch (err) { setError(err.message || '操作失敗，請稍後再試'); }
+            };
+            const markAll = async () => {
+                setBusy(true); setError('');
+                try {
+                    await api.markAllRead();
+                    setItems(list => list.map(x => ({ ...x, is_read: true })));
+                    refreshUnread();
+                } catch (err) { setError(err.message || '操作失敗，請稍後再試'); }
+                finally { setBusy(false); }
+            };
+
+            return (
+                <PageShell>
+                    <div className="flex items-end justify-between gap-4 mb-6">
+                        <h2 className="text-2xl font-black text-zinc-900 tracking-tight">通知</h2>
+                        <button onClick={markAll} disabled={busy || unread === 0} className={btnOutline}>全部標為已讀</button>
+                    </div>
+                    <div className="mb-4"><InlineError message={error} /></div>
+
+                    {status === 'loading' && <Skeletons />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入通知，請稍後再試" onRetry={load} />}
+                    {status === 'ok' && items.length === 0 && <EmptyBox message="目前沒有通知" />}
+                    {status === 'ok' && items.length > 0 && (
+                        <ul className="flex flex-col gap-3">
+                            {items.map(n => (
+                                <li key={n.id} className={`rounded-xl border p-5 shadow-sm ${n.is_read ? 'bg-white border-zinc-200' : 'bg-white border-zinc-900'}`}>
+                                    <div className="flex items-start justify-between gap-3 mb-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            {!n.is_read && <span className="w-2 h-2 rounded-full bg-red-600 shrink-0" aria-label="未讀"></span>}
+                                            <span className="text-xs font-bold text-red-700">你的貼文被退回</span>
+                                        </div>
+                                        <span className="text-xs text-zinc-400 font-mono tabular-nums shrink-0">{formatDateTime(n.created_at)}</span>
+                                    </div>
+                                    <h3 className="text-base font-black text-zinc-900 leading-snug mb-2">{n.post_title}</h3>
+                                    <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
+                                        <p className="text-xs font-bold text-red-700 mb-1">退回理由（審查者：{n.actor_name}）</p>
+                                        <p className="text-sm text-red-900 whitespace-pre-line">{n.reason || '—'}</p>
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                        {!n.is_read && <button onClick={() => markOne(n)} className={btnOutline}>標為已讀</button>}
+                                        <button onClick={() => open(n)} className={btnPrimary}>查看並修改</button>
+                                    </div>
+                                </li>
+                            ))}
                         </ul>
                     )}
                 </PageShell>
@@ -764,6 +858,7 @@
             if (h === '#/submit') return { name: 'submit' };
             if (h === '#/mine') return { name: 'mine' };
             if (h === '#/review') return { name: 'review' };
+            if (h === '#/notifications') return { name: 'notifications' };
             let m = h.match(new RegExp(`^#/p/${UUID}$`));
             if (m) return { name: 'detail', id: m[1] };
             m = h.match(new RegExp(`^#/edit/${UUID}$`));
@@ -778,6 +873,7 @@
             const [sessionReady, setSessionReady] = useState(false);
             const [role, setRole] = useState(null);
             const [pending, setPending] = useState(0);
+            const [unread, setUnread] = useState(0);
             const [showLogin, setShowLogin] = useState(false);
             const [flash, setFlash] = useState('');
 
@@ -807,6 +903,17 @@
             const refreshPending = useCallback(() => { api.pendingCount().then(setPending).catch(() => {}); }, []);
             useEffect(() => { if (isReviewer) refreshPending(); }, [isReviewer, refreshPending]);
 
+            // 未讀通知數：登入後讀取，之後每分鐘與回到分頁時更新
+            const refreshUnread = useCallback(() => { api.unreadCount().then(setUnread).catch(() => {}); }, []);
+            useEffect(() => {
+                setUnread(0);
+                if (!session?.user?.id) return;
+                refreshUnread();
+                const timer = setInterval(refreshUnread, 60000);
+                window.addEventListener('focus', refreshUnread);
+                return () => { clearInterval(timer); window.removeEventListener('focus', refreshUnread); };
+            }, [session?.user?.id, refreshUnread]);
+
             // 提示訊息 6 秒後自動消失
             const notify = (msg) => setFlash(msg);
             useEffect(() => {
@@ -823,18 +930,19 @@
 
             const navItems = [
                 { id: 'home', label: '搜尋', onClick: goHome },
-                { id: 'submit', label: '提報代禱', onClick: () => requireLogin('#/submit') },
-                ...(session ? [{ id: 'mine', label: '我的代禱', onClick: goMine }] : []),
+                { id: 'submit', label: '提報貼文', onClick: () => requireLogin('#/submit') },
+                ...(session ? [{ id: 'mine', label: '我的禱告', onClick: goMine }] : []),
                 ...(isReviewer ? [{ id: 'review', label: '審查', badge: pending, onClick: () => go('#/review') }] : []),
             ];
             const activeNav = route.name === 'detail' ? 'home' : route.name === 'edit' ? 'mine' : route.name;
 
             let body;
-            if (!sessionReady && ['submit', 'mine', 'edit', 'review'].includes(route.name)) body = <PageShell><Skeletons /></PageShell>;
+            if (!sessionReady && ['submit', 'mine', 'edit', 'review', 'notifications'].includes(route.name)) body = <PageShell><Skeletons /></PageShell>;
             else if (route.name === 'detail') body = <DetailView key={route.id} id={route.id} goHome={goHome} />;
             else if (route.name === 'submit') body = <SubmitView session={session} onLogin={() => setShowLogin(true)} goMine={goMine} goHome={goHome} notify={notify} />;
             else if (route.name === 'mine') body = <MineView session={session} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} goSubmit={() => go('#/submit')} flash={flash} />;
             else if (route.name === 'edit') body = <EditView key={route.id} id={route.id} session={session} onLogin={() => setShowLogin(true)} goMine={goMine} notify={notify} />;
+            else if (route.name === 'notifications') body = <NotificationsView session={session} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} refreshUnread={refreshUnread} />;
             else if (route.name === 'review') body = <ReviewView session={session} role={role} onLogin={() => setShowLogin(true)} goHome={goHome} refreshPending={refreshPending} />;
             else body = <HomeView openDetail={openDetail} />;
 
@@ -843,11 +951,18 @@
                     <header className="bg-white border-b border-zinc-200 sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
                         <div className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-3 flex items-center justify-between gap-4">
                             <a href="#" onClick={(e) => { e.preventDefault(); goHome(); }} className={`flex items-baseline gap-3 min-w-0 rounded-md ${focusRing}`}>
-                                <h1 className="text-lg font-black text-zinc-900 tracking-tight shrink-0">守望代禱</h1>
+                                <h1 className="text-lg font-black text-zinc-900 tracking-tight shrink-0">守望禱告</h1>
                                 <span className="text-xs text-zinc-500 truncate">彼此相顧，激發愛心，勉勵行善</span>
                             </a>
                             <div className="flex items-center gap-1 shrink-0">
                                 <a href="./index.html" className={`px-3 py-2 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>回首頁</a>
+                                {session && (
+                                    <button onClick={() => go('#/notifications')} aria-label={unread > 0 ? `通知，${unread} 則未讀` : '通知'}
+                                        className={`relative p-2.5 rounded-lg hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing} ${route.name === 'notifications' ? 'text-zinc-900 bg-zinc-100' : 'text-zinc-600 hover:text-zinc-900'}`}>
+                                        <BellIcon size={20} />
+                                        {unread > 0 && <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-xs font-bold tabular-nums">{unread > 99 ? '99+' : unread}</span>}
+                                    </button>
+                                )}
                                 {session
                                     ? <button onClick={logout} className={`px-3 py-2 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>登出</button>
                                     : <button onClick={() => setShowLogin(true)} className={`px-3 py-2 rounded-lg text-sm font-bold text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 transition-colors duration-150 ${focusRing}`}>登入</button>}
