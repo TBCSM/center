@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>守望代禱 - TBC Serve</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.22.20/babel.min.js"></script>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+        }
+    }
+    </script>
+
+    <style type="text/tailwindcss">
+        body { background-color: #fafafa; font-family: "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-tap-highlight-color: transparent; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.25s ease-out forwards; }
+        /* 手機上輸入框字級 16px，避免 iOS 自動放大畫面 */
+        input { font-size: 16px !important; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useCallback } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { createClient } from '@supabase/supabase-js';
+
+        // ==========================================
+        // 連線設定（與 manager.html 相同的公開金鑰；資料安全靠資料庫的警衛規則）
+        // ==========================================
+        const SUPABASE_URL = "https://jtjgqrqbewbgxscytkod.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_TcixlGOMSLBSZNoMNOp6Ng_B-N4Tw1K";
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // 正式分類（id 要和資料庫的 category 欄位一致）
+        const CATEGORIES = [
+            { id: 'all', label: '全部' },
+            { id: 'kingdom', label: '國度' },
+            { id: 'outreach', label: '外展' },
+            { id: 'fellowship', label: '團契' },
+            { id: 'personal', label: '個人' },
+        ];
+        const categoryLabel = (id) => CATEGORIES.find(c => c.id === id)?.label || '';
+
+        const formatDate = (iso) => {
+            const d = new Date(iso);
+            if (isNaN(d)) return '';
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        };
+
+        // 共用的按鈕狀態樣式：hover / active / focus-visible / disabled
+        const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2";
+
+        // ==========================================
+        // 小圖示（內嵌 SVG，不另外載入圖示套件）
+        // ==========================================
+        const Icon = ({ d, size = 18 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+        );
+        const SearchIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></React.Fragment>} />;
+        const ArrowLeft = (p) => <Icon {...p} d={<React.Fragment><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></React.Fragment>} />;
+        const AlertIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></React.Fragment>} />;
+        const InboxIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1Z" /></React.Fragment>} />;
+
+        // ==========================================
+        // 資料存取：只透過資料庫的公開查詢窗口，不直接讀資料表
+        // ==========================================
+        const api = {
+            search: async (keyword, category) => {
+                const { data, error } = await supabase.rpc('search_public_prayers', {
+                    p_keyword: keyword, p_category: category,
+                });
+                if (error) throw error;
+                return data || [];
+            },
+            detail: async (id) => {
+                const { data, error } = await supabase.rpc('get_public_prayer', { p_id: id });
+                if (error) throw error;
+                return (data && data[0]) || null;
+            },
+        };
+
+        // ==========================================
+        // 共用小元件
+        // ==========================================
+        const CategoryBadge = ({ id }) => (
+            <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-md bg-zinc-100 text-zinc-600">{categoryLabel(id)}</span>
+        );
+
+        const SkeletonCard = () => (
+            <div className="bg-white p-5 rounded-xl border border-zinc-200 animate-pulse" aria-hidden="true">
+                <div className="h-5 w-3/5 bg-zinc-200 rounded mb-3"></div>
+                <div className="h-3.5 w-full bg-zinc-100 rounded mb-2"></div>
+                <div className="h-3.5 w-4/5 bg-zinc-100 rounded mb-5"></div>
+                <div className="h-3 w-1/3 bg-zinc-100 rounded"></div>
+            </div>
+        );
+
+        const ErrorBox = ({ message, onRetry }) => (
+            <div role="alert" className="bg-white border border-red-200 rounded-xl p-6 flex flex-col items-start gap-3">
+                <div className="flex items-center gap-2 text-red-600 font-bold"><AlertIcon /> {message}</div>
+                <button onClick={onRetry} className={`px-4 py-2 rounded-lg text-sm font-bold bg-zinc-900 text-white hover:bg-zinc-700 active:bg-zinc-800 transition-colors duration-150 ${focusRing}`}>重新載入</button>
+            </div>
+        );
+
+        // ==========================================
+        // 首頁：搜尋 + 結果
+        // ==========================================
+        const HomeView = ({ openDetail }) => {
+            // draft = 輸入框裡正在打的字；applied = 真正拿去查詢的條件
+            const [draft, setDraft] = useState('');
+            const [applied, setApplied] = useState({ keyword: '', category: 'all' });
+            const [results, setResults] = useState([]);
+            const [status, setStatus] = useState('loading'); // loading | ok | error
+
+            const load = useCallback(async (cond) => {
+                setStatus('loading');
+                try {
+                    setResults(await api.search(cond.keyword, cond.category));
+                    setStatus('ok');
+                } catch (err) {
+                    console.error('搜尋失敗:', err);
+                    setStatus('error');
+                }
+            }, []);
+
+            useEffect(() => { load(applied); }, [applied, load]);
+
+            const submit = (e) => {
+                e.preventDefault();
+                setApplied(a => ({ ...a, keyword: draft.trim() }));
+            };
+            const pickCategory = (id) => setApplied(a => ({ ...a, category: id }));
+            const clearAll = () => { setDraft(''); setApplied({ keyword: '', category: 'all' }); };
+            const hasFilter = draft !== '' || applied.keyword !== '' || applied.category !== 'all';
+
+            return (
+                <main className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-10 pb-20 animate-fade-in">
+                    <h2 className="text-3xl sm:text-4xl font-black text-zinc-900 tracking-tight leading-tight mb-8">找到可以一起守望的禱告</h2>
+
+                    <section aria-labelledby="search-title" className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-6 shadow-sm mb-8">
+                        <h3 id="search-title" className="text-sm font-bold text-zinc-500 mb-3">搜尋禱告主題</h3>
+
+                        <form onSubmit={submit} className="flex flex-col sm:flex-row gap-3">
+                            <div className="relative flex-1">
+                                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><SearchIcon /></span>
+                                <input
+                                    type="search"
+                                    value={draft}
+                                    onChange={(e) => setDraft(e.target.value)}
+                                    maxLength={100}
+                                    aria-label="關鍵字"
+                                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl pl-11 pr-4 py-3 text-zinc-800 font-medium hover:border-zinc-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 transition-colors duration-150"
+                                />
+                            </div>
+                            <button type="submit" disabled={status === 'loading'} className={`px-6 py-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${focusRing}`}>
+                                立即搜尋
+                            </button>
+                        </form>
+
+                        <div className="flex items-center justify-between gap-3 mt-5">
+                            <div className="flex overflow-x-auto no-scrollbar gap-2" role="group" aria-label="分類">
+                                {CATEGORIES.map(cat => {
+                                    const active = applied.category === cat.id;
+                                    return (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            onClick={() => pickCategory(cat.id)}
+                                            aria-pressed={active}
+                                            className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap border transition-colors duration-150 active:scale-[0.98] ${focusRing} ${
+                                                active ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'
+                                            }`}
+                                        >{cat.label}</button>
+                                    );
+                                })}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={clearAll}
+                                disabled={!hasFilter}
+                                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${focusRing}`}
+                            >清除</button>
+                        </div>
+                    </section>
+
+                    <section aria-live="polite">
+                        {status === 'loading' && (
+                            <div className="flex flex-col gap-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
+                        )}
+
+                        {status === 'error' && (
+                            <ErrorBox message="暫時無法載入代禱事項，請稍後再試" onRetry={() => load(applied)} />
+                        )}
+
+                        {status === 'ok' && results.length === 0 && (
+                            <div className="bg-white border border-zinc-200 rounded-xl py-14 px-6 text-center flex flex-col items-center gap-4">
+                                <span className="text-zinc-300"><InboxIcon size={40} /></span>
+                                <p className="text-zinc-600 font-medium">找不到符合條件的代禱事項，請嘗試其他關鍵字</p>
+                                {hasFilter && (
+                                    <button onClick={clearAll} className={`px-4 py-2 rounded-lg text-sm font-bold border border-zinc-200 text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100 transition-colors duration-150 ${focusRing}`}>清除條件</button>
+                                )}
+                            </div>
+                        )}
+
+                        {status === 'ok' && results.length > 0 && (
+                            <ul className="flex flex-col gap-4">
+                                {results.map(p => (
+                                    <li key={p.id}>
+                                        <button
+                                            type="button"
+                                            onClick={() => openDetail(p.id)}
+                                            className={`w-full text-left bg-white p-5 sm:p-6 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 active:bg-zinc-50 shadow-sm transition-colors duration-150 ${focusRing}`}
+                                        >
+                                            <div className="flex items-start justify-between gap-3 mb-2">
+                                                <h4 className="text-lg font-black text-zinc-900 leading-snug">{p.title}</h4>
+                                                <CategoryBadge id={p.category} />
+                                            </div>
+                                            <p className="text-zinc-600 leading-relaxed mb-4 whitespace-pre-line">{p.summary}</p>
+                                            <div className="text-xs text-zinc-500 flex items-center gap-2">
+                                                <span>提報：{p.display_name}</span>
+                                                <span aria-hidden="true">·</span>
+                                                <span className="tabular-nums font-mono">{formatDate(p.created_at)}</span>
+                                            </div>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+                </main>
+            );
+        };
+
+        // ==========================================
+        // 詳情頁
+        // ==========================================
+        const DetailView = ({ id, goHome }) => {
+            const [post, setPost] = useState(null);
+            const [status, setStatus] = useState('loading'); // loading | ok | notfound | error
+
+            const load = useCallback(async () => {
+                setStatus('loading');
+                try {
+                    const data = await api.detail(id);
+                    if (!data) { setStatus('notfound'); return; }
+                    setPost(data);
+                    setStatus('ok');
+                } catch (err) {
+                    console.error('讀取詳情失敗:', err);
+                    setStatus('error');
+                }
+            }, [id]);
+
+            useEffect(() => { load(); }, [load]);
+
+            return (
+                <main className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-8 pb-20 animate-fade-in">
+                    <button onClick={goHome} className={`inline-flex items-center gap-2 px-3 py-2 -ml-3 mb-6 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>
+                        <ArrowLeft size={16} /> 返回搜尋
+                    </button>
+
+                    {status === 'loading' && (
+                        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-zinc-200 animate-pulse" aria-hidden="true">
+                            <div className="h-7 w-2/3 bg-zinc-200 rounded mb-6"></div>
+                            <div className="h-4 w-full bg-zinc-100 rounded mb-3"></div>
+                            <div className="h-4 w-full bg-zinc-100 rounded mb-3"></div>
+                            <div className="h-4 w-3/5 bg-zinc-100 rounded"></div>
+                        </div>
+                    )}
+
+                    {status === 'error' && <ErrorBox message="暫時無法載入這則代禱，請稍後再試" onRetry={load} />}
+
+                    {status === 'notfound' && (
+                        <div className="bg-white border border-zinc-200 rounded-xl py-14 px-6 text-center flex flex-col items-center gap-4">
+                            <span className="text-zinc-300"><InboxIcon size={40} /></span>
+                            <p className="text-zinc-600 font-medium">這則代禱不存在，或目前不開放瀏覽</p>
+                            <button onClick={goHome} className={`px-4 py-2 rounded-lg text-sm font-bold bg-zinc-900 text-white hover:bg-zinc-700 active:bg-zinc-800 transition-colors duration-150 ${focusRing}`}>回到搜尋</button>
+                        </div>
+                    )}
+
+                    {status === 'ok' && post && (
+                        <article className="bg-white p-6 sm:p-8 rounded-2xl border border-zinc-200 shadow-sm">
+                            <div className="mb-4"><CategoryBadge id={post.category} /></div>
+                            <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight leading-snug mb-6">{post.title}</h2>
+                            <p className="text-zinc-700 leading-loose whitespace-pre-line mb-8 max-w-prose">{post.content}</p>
+                            <div className="pt-4 border-t border-zinc-100 text-xs text-zinc-500 flex items-center gap-2">
+                                <span>提報：{post.display_name}</span>
+                                <span aria-hidden="true">·</span>
+                                <span className="tabular-nums font-mono">{formatDate(post.created_at)}</span>
+                            </div>
+                        </article>
+                    )}
+                </main>
+            );
+        };
+
+        // ==========================================
+        // 外框：頁首（名稱 + 口號小字）與簡易網址切換
+        // 詳情網址格式：prayer.html#/p/貼文編號
+        // ==========================================
+        const App = () => {
+            const readRoute = () => {
+                const m = window.location.hash.match(/^#\/p\/([0-9a-fA-F-]{36})$/);
+                return m ? m[1] : null;
+            };
+            const [detailId, setDetailId] = useState(readRoute());
+
+            useEffect(() => {
+                const onHash = () => setDetailId(readRoute());
+                window.addEventListener('hashchange', onHash);
+                return () => window.removeEventListener('hashchange', onHash);
+            }, []);
+
+            const openDetail = (id) => { window.location.hash = `#/p/${id}`; window.scrollTo(0, 0); };
+            const goHome = () => { window.location.hash = ''; };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <header className="bg-white border-b border-zinc-200 sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+                        <div className="max-w-2xl mx-auto w-full px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+                            <a href="#" onClick={(e) => { e.preventDefault(); goHome(); }} className={`flex items-baseline gap-3 min-w-0 rounded-md ${focusRing}`}>
+                                <h1 className="text-lg font-black text-zinc-900 tracking-tight shrink-0">守望代禱</h1>
+                                <span className="text-xs text-zinc-500 truncate">彼此相顧，激發愛心，勉勵行善</span>
+                            </a>
+                            <a href="./index.html" className={`shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>回首頁</a>
+                        </div>
+                    </header>
+
+                    {detailId
+                        ? <DetailView key={detailId} id={detailId} goHome={goHome} />
+                        : <HomeView openDetail={openDetail} />}
+                </div>
+            );
+        };
+
+        createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
