@@ -29,7 +29,7 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.25s ease-out forwards; }
         /* 手機上輸入框字級 16px，避免 iOS 自動放大畫面 */
-        input { font-size: 16px !important; }
+        input, textarea, select { font-size: 16px !important; }
     </style>
 </head>
 <body>
@@ -41,13 +41,16 @@
         import { createClient } from '@supabase/supabase-js';
 
         // ==========================================
-        // 連線設定（與 manager.html 相同的公開金鑰；資料安全靠資料庫的警衛規則）
+        // 連線設定（與 manager.html 相同的公開金鑰）
+        // 資料安全不靠這把金鑰，而是靠資料庫裡的警衛規則與權限窗口。
+        // 因為與 manager.html 同網站、同專案，登入狀態會自動共用。
         // ==========================================
         const SUPABASE_URL = "https://jtjgqrqbewbgxscytkod.supabase.co";
         const SUPABASE_KEY = "sb_publishable_TcixlGOMSLBSZNoMNOp6Ng_B-N4Tw1K";
         const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+        const VIRTUAL_DOMAIN = "@tbc.gmail.com";
+        const formatEmailForAuth = (acc) => { const t = (acc || '').trim(); return t.includes('@') ? t : `${t}${VIRTUAL_DOMAIN}`; };
 
-        // 正式分類（id 要和資料庫的 category 欄位一致）
         const CATEGORIES = [
             { id: 'all', label: '全部' },
             { id: 'kingdom', label: '國度' },
@@ -55,19 +58,41 @@
             { id: 'fellowship', label: '團契' },
             { id: 'personal', label: '個人' },
         ];
+        const SUBMIT_CATEGORIES = CATEGORIES.filter(c => c.id !== 'all');
         const categoryLabel = (id) => CATEGORIES.find(c => c.id === id)?.label || '';
 
+        const STATUS = {
+            pending:  { label: '待審查', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+            approved: { label: '已核准', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+            returned: { label: '已退回', cls: 'bg-red-50 text-red-700 border-red-200' },
+        };
+        const ACTION_LABEL = {
+            submitted: '提報', approved: '核准', returned: '退回',
+            resubmitted: '修改後重新送審', visibility_changed: '公開設定變更',
+        };
+        const REVIEWER_ROLES = ['admin', 'leader', 'pastor'];
+
+        const pad = (n) => String(n).padStart(2, '0');
         const formatDate = (iso) => {
             const d = new Date(iso);
-            if (isNaN(d)) return '';
-            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            return isNaN(d) ? '' : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        };
+        const formatDateTime = (iso) => {
+            const d = new Date(iso);
+            return isNaN(d) ? '' : `${formatDate(iso)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         };
 
-        // 共用的按鈕狀態樣式：hover / active / focus-visible / disabled
+        // 共用按鈕狀態樣式：hover / active / focus-visible / disabled
         const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2";
+        const disabledCls = "disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none";
+        const btnPrimary = `px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+        const btnDark = `px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-700 active:bg-zinc-800 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+        const btnOutline = `px-4 py-2.5 rounded-xl text-sm font-bold border border-zinc-200 text-zinc-700 bg-white hover:bg-zinc-50 active:bg-zinc-100 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+        const btnDanger = `px-4 py-2.5 rounded-xl text-sm font-bold border border-red-200 text-red-700 bg-white hover:bg-red-50 active:bg-red-100 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+        const inputCls = "w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-zinc-800 font-medium hover:border-zinc-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 transition-colors duration-150";
 
         // ==========================================
-        // 小圖示（內嵌 SVG，不另外載入圖示套件）
+        // 小圖示（內嵌 SVG）
         // ==========================================
         const Icon = ({ d, size = 18 }) => (
             <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -76,22 +101,52 @@
         const ArrowLeft = (p) => <Icon {...p} d={<React.Fragment><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></React.Fragment>} />;
         const AlertIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></React.Fragment>} />;
         const InboxIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1Z" /></React.Fragment>} />;
+        const LockIcon = (p) => <Icon {...p} d={<React.Fragment><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></React.Fragment>} />;
+        const CheckIcon = (p) => <Icon {...p} d={<path d="M20 6 9 17l-5-5" />} />;
 
         // ==========================================
-        // 資料存取：只透過資料庫的公開查詢窗口，不直接讀資料表
+        // 資料存取：全部透過資料庫的窗口（函式）或受警衛規則保護的查詢
         // ==========================================
+        const rpc = async (name, args) => {
+            const { data, error } = await supabase.rpc(name, args);
+            if (error) throw error;
+            return data;
+        };
         const api = {
-            search: async (keyword, category) => {
-                const { data, error } = await supabase.rpc('search_public_prayers', {
-                    p_keyword: keyword, p_category: category,
-                });
+            search: async (keyword, category) => (await rpc('search_public_prayers', { p_keyword: keyword, p_category: category })) || [],
+            detail: async (id) => { const d = await rpc('get_public_prayer', { p_id: id }); return (d && d[0]) || null; },
+            submit: (v) => rpc('submit_prayer', { p_title: v.title, p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
+            resubmit: (id, v) => rpc('resubmit_prayer', { p_id: id, p_title: v.title, p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
+            approve: (id, isPublic) => rpc('approve_prayer', { p_id: id, p_is_public: isPublic }),
+            returnPost: (id, reason) => rpc('return_prayer', { p_id: id, p_reason: reason }),
+            setVisibility: (id, isPublic) => rpc('set_prayer_visibility', { p_id: id, p_is_public: isPublic }),
+            myPosts: async (uid) => {
+                const { data, error } = await supabase.from('prayer_posts').select('*').eq('author_uid', uid).order('created_at', { ascending: false });
                 if (error) throw error;
                 return data || [];
             },
-            detail: async (id) => {
-                const { data, error } = await supabase.rpc('get_public_prayer', { p_id: id });
+            postsByStatus: async (status) => {
+                const { data, error } = await supabase.from('prayer_posts').select('*').eq('review_status', status).order('created_at', { ascending: false });
                 if (error) throw error;
-                return (data && data[0]) || null;
+                return data || [];
+            },
+            logsOfPost: async (id) => {
+                const { data, error } = await supabase.from('prayer_review_logs').select('*').eq('post_id', id).order('created_at', { ascending: true });
+                if (error) throw error;
+                return data || [];
+            },
+            latestReturnReasons: async (ids) => {
+                if (!ids.length) return {};
+                const { data, error } = await supabase.from('prayer_review_logs').select('post_id, reason, actor_name, created_at').eq('action', 'returned').in('post_id', ids).order('created_at', { ascending: true });
+                if (error) throw error;
+                const map = {};
+                (data || []).forEach(l => { map[l.post_id] = l; }); // 依時間排序，最後一筆就是最新的
+                return map;
+            },
+            pendingCount: async () => {
+                const { count, error } = await supabase.from('prayer_posts').select('id', { count: 'exact', head: true }).eq('review_status', 'pending');
+                if (error) throw error;
+                return count || 0;
             },
         };
 
@@ -100,6 +155,14 @@
         // ==========================================
         const CategoryBadge = ({ id }) => (
             <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-md bg-zinc-100 text-zinc-600">{categoryLabel(id)}</span>
+        );
+        const StatusBadge = ({ status }) => (
+            <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-md border ${STATUS[status]?.cls || ''}`}>{STATUS[status]?.label || status}</span>
+        );
+        const VisibilityBadge = ({ isPublic }) => (
+            <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-md bg-zinc-100 text-zinc-600">
+                {!isPublic && <LockIcon size={12} />}{isPublic ? '公開' : '不公開'}
+            </span>
         );
 
         const SkeletonCard = () => (
@@ -110,44 +173,128 @@
                 <div className="h-3 w-1/3 bg-zinc-100 rounded"></div>
             </div>
         );
+        const Skeletons = () => <div className="flex flex-col gap-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>;
 
         const ErrorBox = ({ message, onRetry }) => (
             <div role="alert" className="bg-white border border-red-200 rounded-xl p-6 flex flex-col items-start gap-3">
                 <div className="flex items-center gap-2 text-red-600 font-bold"><AlertIcon /> {message}</div>
-                <button onClick={onRetry} className={`px-4 py-2 rounded-lg text-sm font-bold bg-zinc-900 text-white hover:bg-zinc-700 active:bg-zinc-800 transition-colors duration-150 ${focusRing}`}>重新載入</button>
+                {onRetry && <button onClick={onRetry} className={btnDark}>重新載入</button>}
             </div>
         );
+        const InlineError = ({ message }) => message ? (
+            <div role="alert" className="flex items-start gap-2 text-sm font-medium text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2.5">
+                <span className="mt-0.5 shrink-0"><AlertIcon size={16} /></span><span>{message}</span>
+            </div>
+        ) : null;
+
+        const EmptyBox = ({ message, action }) => (
+            <div className="bg-white border border-zinc-200 rounded-xl py-14 px-6 text-center flex flex-col items-center gap-4">
+                <span className="text-zinc-300"><InboxIcon size={40} /></span>
+                <p className="text-zinc-600 font-medium">{message}</p>
+                {action}
+            </div>
+        );
+
+        const PageShell = ({ children, back }) => (
+            <main className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-8 pb-20 animate-fade-in">
+                {back}
+                {children}
+            </main>
+        );
+        const BackButton = ({ onClick, label = '返回' }) => (
+            <button onClick={onClick} className={`inline-flex items-center gap-2 px-3 py-2 -ml-3 mb-6 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>
+                <ArrowLeft size={16} /> {label}
+            </button>
+        );
+
+        const TabBar = ({ tabs, value, onChange }) => (
+            <div className="flex overflow-x-auto no-scrollbar gap-2 mb-6" role="tablist">
+                {tabs.map(t => {
+                    const active = value === t.id;
+                    return (
+                        <button key={t.id} role="tab" aria-selected={active} onClick={() => onChange(t.id)}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap border transition-colors duration-150 active:scale-[0.98] ${focusRing} ${active ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'}`}>
+                            {t.label}
+                        </button>
+                    );
+                })}
+            </div>
+        );
+
+        const NeedLogin = ({ onLogin }) => (
+            <EmptyBox message="這個功能需要先登入" action={<button onClick={onLogin} className={btnDark}>登入</button>} />
+        );
+
+        // ==========================================
+        // 登入視窗（與 manager.html 相同的帳號規則：電話號碼或 Email）
+        // 註冊仍在 manager.html 進行
+        // ==========================================
+        const LoginModal = ({ onClose }) => {
+            const [account, setAccount] = useState('');
+            const [password, setPassword] = useState('');
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+
+            const submit = async (e) => {
+                e.preventDefault();
+                setBusy(true); setError('');
+                const { error } = await supabase.auth.signInWithPassword({ email: formatEmailForAuth(account), password });
+                setBusy(false);
+                if (error) {
+                    setError(error.message.includes('Invalid login credentials') ? '登入失敗：帳號或密碼錯誤' : '登入時發生問題，請稍後再試');
+                    return;
+                }
+                onClose();
+            };
+
+            useEffect(() => {
+                const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            }, [onClose]);
+
+            return (
+                <div className="fixed inset-0 bg-zinc-900/40 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="login-title" onClick={onClose}>
+                    <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-lg animate-fade-in" onClick={(e) => e.stopPropagation()}>
+                        <h3 id="login-title" className="text-xl font-black text-zinc-900 mb-1">登入</h3>
+                        <p className="text-sm text-zinc-500 mb-6">使用與同工系統相同的帳號</p>
+                        <form onSubmit={submit} className="flex flex-col gap-4">
+                            <label className="flex flex-col gap-1.5 text-xs font-bold text-zinc-500">帳號
+                                <input type="text" value={account} onChange={(e) => setAccount(e.target.value)} required autoFocus autoComplete="username" className={inputCls} />
+                            </label>
+                            <label className="flex flex-col gap-1.5 text-xs font-bold text-zinc-500">密碼
+                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" className={inputCls} />
+                            </label>
+                            <InlineError message={error} />
+                            <div className="flex gap-3 justify-end pt-1">
+                                <button type="button" onClick={onClose} className={btnOutline}>取消</button>
+                                <button type="submit" disabled={busy} className={btnPrimary}>{busy ? '登入中…' : '登入'}</button>
+                            </div>
+                            <p className="text-xs text-zinc-400 pt-3 border-t border-zinc-100">還沒有帳號？請到同工系統註冊。忘記密碼請聯絡行政辦公室。</p>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
 
         // ==========================================
         // 首頁：搜尋 + 結果
         // ==========================================
         const HomeView = ({ openDetail }) => {
-            // draft = 輸入框裡正在打的字；applied = 真正拿去查詢的條件
             const [draft, setDraft] = useState('');
             const [applied, setApplied] = useState({ keyword: '', category: 'all' });
             const [results, setResults] = useState([]);
-            const [status, setStatus] = useState('loading'); // loading | ok | error
+            const [status, setStatus] = useState('loading');
 
             const load = useCallback(async (cond) => {
                 setStatus('loading');
-                try {
-                    setResults(await api.search(cond.keyword, cond.category));
-                    setStatus('ok');
-                } catch (err) {
-                    console.error('搜尋失敗:', err);
-                    setStatus('error');
-                }
+                try { setResults(await api.search(cond.keyword, cond.category)); setStatus('ok'); }
+                catch (err) { console.error('搜尋失敗:', err); setStatus('error'); }
             }, []);
-
             useEffect(() => { load(applied); }, [applied, load]);
 
-            const submit = (e) => {
-                e.preventDefault();
-                setApplied(a => ({ ...a, keyword: draft.trim() }));
-            };
+            const submit = (e) => { e.preventDefault(); setApplied(a => ({ ...a, keyword: draft.trim() })); };
             const pickCategory = (id) => setApplied(a => ({ ...a, category: id }));
-            const clearAll = () => { setDraft(''); setApplied({ keyword: '', category: 'all' }); };
-            const hasFilter = draft !== '' || applied.keyword !== '' || applied.category !== 'all';
 
             return (
                 <main className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-10 pb-20 animate-fade-in">
@@ -155,86 +302,42 @@
 
                     <section aria-labelledby="search-title" className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-6 shadow-sm mb-8">
                         <h3 id="search-title" className="text-sm font-bold text-zinc-500 mb-3">搜尋禱告主題</h3>
-
                         <form onSubmit={submit} className="flex flex-col sm:flex-row gap-3">
                             <div className="relative flex-1">
                                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><SearchIcon /></span>
-                                <input
-                                    type="search"
-                                    value={draft}
-                                    onChange={(e) => setDraft(e.target.value)}
-                                    maxLength={100}
-                                    aria-label="關鍵字"
-                                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl pl-11 pr-4 py-3 text-zinc-800 font-medium hover:border-zinc-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 transition-colors duration-150"
-                                />
+                                <input type="search" value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={100} aria-label="關鍵字"
+                                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl pl-11 pr-4 py-3 text-zinc-800 font-medium hover:border-zinc-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 transition-colors duration-150" />
                             </div>
-                            <button type="submit" disabled={status === 'loading'} className={`px-6 py-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${focusRing}`}>
-                                立即搜尋
-                            </button>
+                            <button type="submit" disabled={status === 'loading'} className={`px-6 py-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-colors duration-150 ${disabledCls} ${focusRing}`}>立即搜尋</button>
                         </form>
-
-                        <div className="flex items-center justify-between gap-3 mt-5">
-                            <div className="flex overflow-x-auto no-scrollbar gap-2" role="group" aria-label="分類">
-                                {CATEGORIES.map(cat => {
-                                    const active = applied.category === cat.id;
-                                    return (
-                                        <button
-                                            key={cat.id}
-                                            type="button"
-                                            onClick={() => pickCategory(cat.id)}
-                                            aria-pressed={active}
-                                            className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap border transition-colors duration-150 active:scale-[0.98] ${focusRing} ${
-                                                active ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'
-                                            }`}
-                                        >{cat.label}</button>
-                                    );
-                                })}
-                            </div>
-                            <button
-                                type="button"
-                                onClick={clearAll}
-                                disabled={!hasFilter}
-                                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${focusRing}`}
-                            >清除</button>
+                        <div className="flex overflow-x-auto no-scrollbar gap-2 mt-5" role="group" aria-label="分類">
+                            {CATEGORIES.map(cat => {
+                                const active = applied.category === cat.id;
+                                return (
+                                    <button key={cat.id} type="button" onClick={() => pickCategory(cat.id)} aria-pressed={active}
+                                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap border transition-colors duration-150 active:scale-[0.98] ${focusRing} ${active ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'}`}>{cat.label}</button>
+                                );
+                            })}
                         </div>
                     </section>
 
                     <section aria-live="polite">
-                        {status === 'loading' && (
-                            <div className="flex flex-col gap-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
-                        )}
-
-                        {status === 'error' && (
-                            <ErrorBox message="暫時無法載入代禱事項，請稍後再試" onRetry={() => load(applied)} />
-                        )}
-
-                        {status === 'ok' && results.length === 0 && (
-                            <div className="bg-white border border-zinc-200 rounded-xl py-14 px-6 text-center flex flex-col items-center gap-4">
-                                <span className="text-zinc-300"><InboxIcon size={40} /></span>
-                                <p className="text-zinc-600 font-medium">找不到符合條件的代禱事項，請嘗試其他關鍵字</p>
-                                {hasFilter && (
-                                    <button onClick={clearAll} className={`px-4 py-2 rounded-lg text-sm font-bold border border-zinc-200 text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100 transition-colors duration-150 ${focusRing}`}>清除條件</button>
-                                )}
-                            </div>
-                        )}
-
+                        {status === 'loading' && <Skeletons />}
+                        {status === 'error' && <ErrorBox message="暫時無法載入代禱事項，請稍後再試" onRetry={() => load(applied)} />}
+                        {status === 'ok' && results.length === 0 && <EmptyBox message="找不到符合條件的代禱事項，請嘗試其他關鍵字" />}
                         {status === 'ok' && results.length > 0 && (
                             <ul className="flex flex-col gap-4">
                                 {results.map(p => (
                                     <li key={p.id}>
-                                        <button
-                                            type="button"
-                                            onClick={() => openDetail(p.id)}
-                                            className={`w-full text-left bg-white p-5 sm:p-6 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 active:bg-zinc-50 shadow-sm transition-colors duration-150 ${focusRing}`}
-                                        >
+                                        <button type="button" onClick={() => openDetail(p.id)}
+                                            className={`w-full text-left bg-white p-5 sm:p-6 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 active:bg-zinc-50 shadow-sm transition-colors duration-150 ${focusRing}`}>
                                             <div className="flex items-start justify-between gap-3 mb-2">
                                                 <h4 className="text-lg font-black text-zinc-900 leading-snug">{p.title}</h4>
                                                 <CategoryBadge id={p.category} />
                                             </div>
                                             <p className="text-zinc-600 leading-relaxed mb-4 whitespace-pre-line">{p.summary}</p>
                                             <div className="text-xs text-zinc-500 flex items-center gap-2">
-                                                <span>提報：{p.display_name}</span>
-                                                <span aria-hidden="true">·</span>
+                                                <span>提報：{p.display_name}</span><span aria-hidden="true">·</span>
                                                 <span className="tabular-nums font-mono">{formatDate(p.created_at)}</span>
                                             </div>
                                         </button>
@@ -248,33 +351,23 @@
         };
 
         // ==========================================
-        // 詳情頁
+        // 公開詳情頁
         // ==========================================
         const DetailView = ({ id, goHome }) => {
             const [post, setPost] = useState(null);
-            const [status, setStatus] = useState('loading'); // loading | ok | notfound | error
-
+            const [status, setStatus] = useState('loading');
             const load = useCallback(async () => {
                 setStatus('loading');
                 try {
                     const data = await api.detail(id);
                     if (!data) { setStatus('notfound'); return; }
-                    setPost(data);
-                    setStatus('ok');
-                } catch (err) {
-                    console.error('讀取詳情失敗:', err);
-                    setStatus('error');
-                }
+                    setPost(data); setStatus('ok');
+                } catch (err) { console.error('讀取詳情失敗:', err); setStatus('error'); }
             }, [id]);
-
             useEffect(() => { load(); }, [load]);
 
             return (
-                <main className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-8 pb-20 animate-fade-in">
-                    <button onClick={goHome} className={`inline-flex items-center gap-2 px-3 py-2 -ml-3 mb-6 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>
-                        <ArrowLeft size={16} /> 返回搜尋
-                    </button>
-
+                <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}>
                     {status === 'loading' && (
                         <div className="bg-white p-6 sm:p-8 rounded-2xl border border-zinc-200 animate-pulse" aria-hidden="true">
                             <div className="h-7 w-2/3 bg-zinc-200 rounded mb-6"></div>
@@ -283,68 +376,503 @@
                             <div className="h-4 w-3/5 bg-zinc-100 rounded"></div>
                         </div>
                     )}
-
                     {status === 'error' && <ErrorBox message="暫時無法載入這則代禱，請稍後再試" onRetry={load} />}
-
-                    {status === 'notfound' && (
-                        <div className="bg-white border border-zinc-200 rounded-xl py-14 px-6 text-center flex flex-col items-center gap-4">
-                            <span className="text-zinc-300"><InboxIcon size={40} /></span>
-                            <p className="text-zinc-600 font-medium">這則代禱不存在，或目前不開放瀏覽</p>
-                            <button onClick={goHome} className={`px-4 py-2 rounded-lg text-sm font-bold bg-zinc-900 text-white hover:bg-zinc-700 active:bg-zinc-800 transition-colors duration-150 ${focusRing}`}>回到搜尋</button>
-                        </div>
-                    )}
-
+                    {status === 'notfound' && <EmptyBox message="這則代禱不存在，或目前不開放瀏覽" action={<button onClick={goHome} className={btnDark}>回到搜尋</button>} />}
                     {status === 'ok' && post && (
                         <article className="bg-white p-6 sm:p-8 rounded-2xl border border-zinc-200 shadow-sm">
                             <div className="mb-4"><CategoryBadge id={post.category} /></div>
                             <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight leading-snug mb-6">{post.title}</h2>
                             <p className="text-zinc-700 leading-loose whitespace-pre-line mb-8 max-w-prose">{post.content}</p>
                             <div className="pt-4 border-t border-zinc-100 text-xs text-zinc-500 flex items-center gap-2">
-                                <span>提報：{post.display_name}</span>
-                                <span aria-hidden="true">·</span>
+                                <span>提報：{post.display_name}</span><span aria-hidden="true">·</span>
                                 <span className="tabular-nums font-mono">{formatDate(post.created_at)}</span>
                             </div>
                         </article>
                     )}
-                </main>
+                </PageShell>
             );
         };
 
         // ==========================================
-        // 外框：頁首（名稱 + 口號小字）與簡易網址切換
-        // 詳情網址格式：prayer.html#/p/貼文編號
+        // 提報／修改表單（提報與「被退回後修改」共用）
         // ==========================================
-        const App = () => {
-            const readRoute = () => {
-                const m = window.location.hash.match(/^#\/p\/([0-9a-fA-F-]{36})$/);
-                return m ? m[1] : null;
+        const RadioCard = ({ checked, onChange, title, hint, name }) => (
+            <label className={`flex-1 flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-colors duration-150 focus-within:ring-2 focus-within:ring-emerald-600 focus-within:ring-offset-2 ${checked ? 'border-zinc-900 bg-zinc-50' : 'border-zinc-200 bg-white hover:bg-zinc-50'}`}>
+                <input type="radio" name={name} checked={checked} onChange={onChange} className="mt-1 accent-zinc-900" />
+                <span className="flex flex-col"><span className="text-sm font-bold text-zinc-900">{title}</span><span className="text-xs text-zinc-500 mt-0.5">{hint}</span></span>
+            </label>
+        );
+
+        const PostForm = ({ initial, submitLabel, busy, error, onSubmit, onCancel }) => {
+            const [v, setV] = useState(initial);
+            const set = (k, val) => setV(s => ({ ...s, [k]: val }));
+            const submit = (e) => { e.preventDefault(); onSubmit({ ...v, title: v.title.trim(), content: v.content.trim() }); };
+            const ready = v.title.trim() && v.content.trim() && v.category;
+
+            return (
+                <form onSubmit={submit} className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-8 shadow-sm flex flex-col gap-6">
+                    <label className="flex flex-col gap-1.5">
+                        <span className="flex justify-between text-sm font-bold text-zinc-700">標題 <span className="text-xs font-mono tabular-nums text-zinc-400">{v.title.length}/100</span></span>
+                        <input type="text" value={v.title} onChange={(e) => set('title', e.target.value)} maxLength={100} required className={inputCls} />
+                    </label>
+
+                    <label className="flex flex-col gap-1.5">
+                        <span className="flex justify-between text-sm font-bold text-zinc-700">內文 <span className="text-xs font-mono tabular-nums text-zinc-400">{v.content.length}/2000</span></span>
+                        <textarea value={v.content} onChange={(e) => set('content', e.target.value)} maxLength={2000} rows={7} required className={`${inputCls} leading-relaxed resize-y`} />
+                    </label>
+
+                    <fieldset className="flex flex-col gap-2">
+                        <legend className="text-sm font-bold text-zinc-700 mb-1">分類</legend>
+                        <div className="flex flex-wrap gap-2">
+                            {SUBMIT_CATEGORIES.map(c => {
+                                const active = v.category === c.id;
+                                return (
+                                    <button key={c.id} type="button" aria-pressed={active} onClick={() => set('category', c.id)}
+                                        className={`px-4 py-2 rounded-lg text-sm font-bold border transition-colors duration-150 active:scale-[0.98] ${focusRing} ${active ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'}`}>{c.label}</button>
+                                );
+                            })}
+                        </div>
+                    </fieldset>
+
+                    <fieldset className="flex flex-col gap-2">
+                        <legend className="text-sm font-bold text-zinc-700 mb-1">公開設定</legend>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <RadioCard name="is_public" checked={v.is_public === true} onChange={() => set('is_public', true)} title="公開" hint="核准後，所有人都能搜尋到" />
+                            <RadioCard name="is_public" checked={v.is_public === false} onChange={() => set('is_public', false)} title="不公開" hint="只有牧師、區長與你本人看得到" />
+                        </div>
+                    </fieldset>
+
+                    <fieldset className="flex flex-col gap-2">
+                        <legend className="text-sm font-bold text-zinc-700 mb-1">提報者顯示方式</legend>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <RadioCard name="show_name" checked={v.show_name === false} onChange={() => set('show_name', false)} title="匿名" hint="卡片上顯示「匿名」" />
+                            <RadioCard name="show_name" checked={v.show_name === true} onChange={() => set('show_name', true)} title="顯示我的姓名" hint="卡片上顯示你的姓名" />
+                        </div>
+                    </fieldset>
+
+                    <InlineError message={error} />
+
+                    <div className="flex gap-3 justify-end pt-2 border-t border-zinc-100">
+                        <button type="button" onClick={onCancel} className={btnOutline}>取消</button>
+                        <button type="submit" disabled={busy || !ready} className={btnPrimary}>{busy ? '送出中…' : submitLabel}</button>
+                    </div>
+                </form>
+            );
+        };
+
+        const EMPTY_FORM = { title: '', content: '', category: '', is_public: false, show_name: false };
+
+        const SubmitView = ({ session, onLogin, goMine, goHome, notify }) => {
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><NeedLogin onLogin={onLogin} /></PageShell>;
+
+            const handle = async (values) => {
+                setBusy(true); setError('');
+                try {
+                    await api.submit(values);
+                    notify('已送出，這則代禱現在是「待審查」，審查通過後才會公開。');
+                    goMine();
+                } catch (err) { setError(err.message || '送出失敗，請稍後再試'); }
+                finally { setBusy(false); }
             };
-            const [detailId, setDetailId] = useState(readRoute());
+            return (
+                <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">提報代禱</h2>
+                    <p className="text-sm text-zinc-500 mb-6">送出後會由牧師或區長審查，通過後才會依你選的公開設定顯示。</p>
+                    <PostForm initial={EMPTY_FORM} submitLabel="送出提報" busy={busy} error={error} onSubmit={handle} onCancel={goHome} />
+                </PageShell>
+            );
+        };
+
+        // ==========================================
+        // 審查歷程
+        // ==========================================
+        const HistoryList = ({ postId }) => {
+            const [logs, setLogs] = useState(null);
+            const [error, setError] = useState('');
+            useEffect(() => {
+                let alive = true;
+                api.logsOfPost(postId).then(d => alive && setLogs(d)).catch(() => alive && setError('無法載入審查歷程'));
+                return () => { alive = false; };
+            }, [postId]);
+            if (error) return <p className="text-sm text-red-600">{error}</p>;
+            if (!logs) return <p className="text-sm text-zinc-400 animate-pulse">載入中…</p>;
+            return (
+                <ol className="flex flex-col gap-3 border-l-2 border-zinc-100 pl-4">
+                    {logs.map(l => (
+                        <li key={l.id} className="text-sm">
+                            <div className="flex flex-wrap items-baseline gap-x-2 text-zinc-800">
+                                <span className="font-bold">{ACTION_LABEL[l.action] || l.action}</span>
+                                <span className="text-zinc-500">{l.actor_name}</span>
+                                <span className="text-xs text-zinc-400 font-mono tabular-nums">{formatDateTime(l.created_at)}</span>
+                            </div>
+                            {l.reason && <p className="text-zinc-600 mt-0.5 whitespace-pre-line">{l.reason}</p>}
+                        </li>
+                    ))}
+                </ol>
+            );
+        };
+
+        // ==========================================
+        // 我的代禱
+        // ==========================================
+        const MineView = ({ session, onLogin, goHome, goEdit, goSubmit, flash }) => {
+            const [tab, setTab] = useState('all');
+            const [posts, setPosts] = useState([]);
+            const [reasons, setReasons] = useState({});
+            const [status, setStatus] = useState('loading');
+            const [openHistory, setOpenHistory] = useState(null);
+
+            const load = useCallback(async () => {
+                if (!session) return;
+                setStatus('loading');
+                try {
+                    const list = await api.myPosts(session.user.id);
+                    setPosts(list);
+                    setReasons(await api.latestReturnReasons(list.filter(p => p.review_status === 'returned').map(p => p.id)));
+                    setStatus('ok');
+                } catch (err) { console.error('讀取我的代禱失敗:', err); setStatus('error'); }
+            }, [session?.user?.id]);
+            useEffect(() => { load(); }, [load]);
+
+            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><NeedLogin onLogin={onLogin} /></PageShell>;
+
+            const tabs = [{ id: 'all', label: '全部' }, { id: 'pending', label: '待審查' }, { id: 'approved', label: '已核准' }, { id: 'returned', label: '已退回' }];
+            const shown = tab === 'all' ? posts : posts.filter(p => p.review_status === tab);
+
+            return (
+                <PageShell>
+                    <div className="flex items-end justify-between gap-4 mb-6">
+                        <h2 className="text-2xl font-black text-zinc-900 tracking-tight">我的代禱</h2>
+                        <button onClick={goSubmit} className={btnPrimary}>提報代禱</button>
+                    </div>
+                    {flash && <div role="status" className="flex items-start gap-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2.5 mb-6"><span className="mt-0.5 shrink-0"><CheckIcon size={16} /></span>{flash}</div>}
+                    <TabBar tabs={tabs} value={tab} onChange={setTab} />
+
+                    {status === 'loading' && <Skeletons />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入你的代禱，請稍後再試" onRetry={load} />}
+                    {status === 'ok' && shown.length === 0 && <EmptyBox message={tab === 'all' ? '你還沒有提報過代禱' : '這個分類目前沒有代禱'} action={tab === 'all' ? <button onClick={goSubmit} className={btnDark}>提報第一則代禱</button> : null} />}
+                    {status === 'ok' && shown.length > 0 && (
+                        <ul className="flex flex-col gap-4">
+                            {shown.map(p => {
+                                const r = reasons[p.id];
+                                return (
+                                    <li key={p.id} className="bg-white p-5 sm:p-6 rounded-xl border border-zinc-200 shadow-sm">
+                                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                                            <StatusBadge status={p.review_status} /><CategoryBadge id={p.category} /><VisibilityBadge isPublic={p.is_public} />
+                                        </div>
+                                        <h3 className="text-lg font-black text-zinc-900 leading-snug mb-1">{p.title}</h3>
+                                        <p className="text-zinc-600 leading-relaxed line-clamp-3 whitespace-pre-line mb-3">{p.content}</p>
+                                        {p.review_status === 'returned' && (
+                                            <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
+                                                <p className="text-xs font-bold text-red-700 mb-1">退回理由{r ? `（${r.actor_name}）` : ''}</p>
+                                                <p className="text-sm text-red-900 whitespace-pre-line">{r?.reason || '—'}</p>
+                                            </div>
+                                        )}
+                                        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-zinc-100">
+                                            <span className="text-xs text-zinc-400 font-mono tabular-nums">{formatDate(p.created_at)}</span>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setOpenHistory(openHistory === p.id ? null : p.id)} className={btnOutline}>{openHistory === p.id ? '收合歷程' : '審查歷程'}</button>
+                                                {p.review_status === 'returned' && <button onClick={() => goEdit(p.id)} className={btnPrimary}>修改並重新送審</button>}
+                                            </div>
+                                        </div>
+                                        {openHistory === p.id && <div className="mt-4"><HistoryList postId={p.id} /></div>}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                </PageShell>
+            );
+        };
+
+        // ==========================================
+        // 修改被退回的貼文並重新送審
+        // ==========================================
+        const EditView = ({ id, session, onLogin, goMine, notify }) => {
+            const [post, setPost] = useState(null);
+            const [status, setStatus] = useState('loading');
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
 
             useEffect(() => {
-                const onHash = () => setDetailId(readRoute());
+                if (!session) return;
+                let alive = true;
+                (async () => {
+                    try {
+                        const list = await api.myPosts(session.user.id);
+                        const found = list.find(p => p.id === id);
+                        if (!alive) return;
+                        if (!found || found.review_status !== 'returned') { setStatus('notfound'); return; }
+                        setPost(found); setStatus('ok');
+                    } catch (err) { console.error(err); if (alive) setStatus('error'); }
+                })();
+                return () => { alive = false; };
+            }, [id, session?.user?.id]);
+
+            if (!session) return <PageShell back={<BackButton onClick={goMine} />}><NeedLogin onLogin={onLogin} /></PageShell>;
+
+            const handle = async (values) => {
+                setBusy(true); setError('');
+                try {
+                    await api.resubmit(id, values);
+                    notify('已重新送審，狀態回到「待審查」。先前的審查紀錄都有保留。');
+                    goMine();
+                } catch (err) { setError(err.message || '送出失敗，請稍後再試'); }
+                finally { setBusy(false); }
+            };
+
+            return (
+                <PageShell back={<BackButton onClick={goMine} label="返回我的代禱" />}>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">修改並重新送審</h2>
+                    {status === 'loading' && <Skeletons />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入，請稍後再試" />}
+                    {status === 'notfound' && <EmptyBox message="找不到這則代禱，或它目前不是「已退回」狀態" action={<button onClick={goMine} className={btnDark}>回到我的代禱</button>} />}
+                    {status === 'ok' && post && (
+                        <PostForm
+                            initial={{ title: post.title, content: post.content, category: post.category, is_public: post.is_public, show_name: post.show_name }}
+                            submitLabel="重新送審" busy={busy} error={error} onSubmit={handle} onCancel={goMine} />
+                    )}
+                </PageShell>
+            );
+        };
+
+        // ==========================================
+        // 審查頁（牧師、區長、admin）
+        // 這裡的按鈕只是方便使用；真正的權限由資料庫檢查
+        // ==========================================
+        const ReviewCard = ({ post, session, isAdmin, onChanged }) => {
+            const [isPublic, setIsPublic] = useState(post.is_public);
+            const [returning, setReturning] = useState(false);
+            const [reason, setReason] = useState('');
+            const [showHistory, setShowHistory] = useState(false);
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+            const isOwn = post.author_uid === session.user.id && !isAdmin;
+
+            const run = async (fn) => {
+                setBusy(true); setError('');
+                try { await fn(); await onChanged(); }
+                catch (err) { setError(err.message || '操作失敗，請稍後再試'); }
+                finally { setBusy(false); }
+            };
+
+            return (
+                <li className="bg-white p-5 sm:p-6 rounded-xl border border-zinc-200 shadow-sm">
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <StatusBadge status={post.review_status} /><CategoryBadge id={post.category} /><VisibilityBadge isPublic={post.is_public} />
+                    </div>
+                    <h3 className="text-lg font-black text-zinc-900 leading-snug mb-2">{post.title}</h3>
+                    <p className="text-zinc-700 leading-relaxed whitespace-pre-line mb-4">{post.content}</p>
+                    <div className="text-xs text-zinc-500 flex flex-wrap items-center gap-x-2 gap-y-1 mb-4">
+                        <span>提報者：{post.author_name}</span><span aria-hidden="true">·</span>
+                        <span>卡片顯示：{post.show_name ? '姓名' : '匿名'}</span><span aria-hidden="true">·</span>
+                        <span className="font-mono tabular-nums">{formatDateTime(post.created_at)}</span>
+                    </div>
+
+                    {isOwn ? (
+                        <p className="text-sm text-zinc-500 bg-zinc-50 border border-zinc-100 rounded-lg px-3 py-2.5 mb-2">這是你自己提報的代禱，需由其他審查者處理。</p>
+                    ) : (
+                        <div className="flex flex-col gap-4 pt-4 border-t border-zinc-100">
+                            {post.review_status === 'pending' && (
+                                <>
+                                    <fieldset className="flex flex-col gap-2">
+                                        <legend className="text-xs font-bold text-zinc-500 mb-1">核准後的公開設定</legend>
+                                        <div className="flex gap-3">
+                                            <RadioCard name={`pub-${post.id}`} checked={isPublic === true} onChange={() => setIsPublic(true)} title="公開" hint="所有人可搜尋" />
+                                            <RadioCard name={`pub-${post.id}`} checked={isPublic === false} onChange={() => setIsPublic(false)} title="不公開" hint="僅審查者與本人" />
+                                        </div>
+                                    </fieldset>
+                                    {returning ? (
+                                        <div className="flex flex-col gap-2">
+                                            <label className="text-xs font-bold text-zinc-500" htmlFor={`reason-${post.id}`}>退回理由（必填，提報者會看到）</label>
+                                            <textarea id={`reason-${post.id}`} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} className={`${inputCls} resize-y`} />
+                                            <div className="flex gap-2 justify-end">
+                                                <button onClick={() => { setReturning(false); setReason(''); setError(''); }} disabled={busy} className={btnOutline}>取消</button>
+                                                <button onClick={() => run(() => api.returnPost(post.id, reason))} disabled={busy || !reason.trim()} className={btnDanger}>{busy ? '處理中…' : '確認退回'}</button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex gap-2 justify-end">
+                                            <button onClick={() => setReturning(true)} disabled={busy} className={btnDanger}>退回</button>
+                                            <button onClick={() => run(() => api.approve(post.id, isPublic))} disabled={busy} className={btnPrimary}>{busy ? '處理中…' : '核准'}</button>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                            {post.review_status !== 'pending' && (
+                                <div className="flex justify-end">
+                                    <button onClick={() => run(() => api.setVisibility(post.id, !post.is_public))} disabled={busy} className={btnOutline}>
+                                        {busy ? '處理中…' : (post.is_public ? '改為不公開' : '改為公開')}
+                                    </button>
+                                </div>
+                            )}
+                            <InlineError message={error} />
+                        </div>
+                    )}
+
+                    <div className="pt-3">
+                        <button onClick={() => setShowHistory(s => !s)} className={`text-sm font-bold text-zinc-500 hover:text-zinc-900 rounded px-1 -ml-1 transition-colors duration-150 ${focusRing}`}>{showHistory ? '收合審查歷程' : '查看審查歷程'}</button>
+                        {showHistory && <div className="mt-3"><HistoryList postId={post.id} /></div>}
+                    </div>
+                </li>
+            );
+        };
+
+        const ReviewView = ({ session, role, onLogin, goHome, refreshPending }) => {
+            const [tab, setTab] = useState('pending');
+            const [posts, setPosts] = useState([]);
+            const [status, setStatus] = useState('loading');
+
+            const load = useCallback(async () => {
+                setStatus('loading');
+                try { setPosts(await api.postsByStatus(tab)); setStatus('ok'); }
+                catch (err) { console.error('讀取審查清單失敗:', err); setStatus('error'); }
+            }, [tab]);
+            useEffect(() => { if (session && REVIEWER_ROLES.includes(role)) load(); }, [load, session, role]);
+
+            if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><NeedLogin onLogin={onLogin} /></PageShell>;
+            if (!REVIEWER_ROLES.includes(role)) return <PageShell back={<BackButton onClick={goHome} label="返回搜尋" />}><EmptyBox message="只有牧師與區長可以進入審查頁" /></PageShell>;
+
+            const tabs = [{ id: 'pending', label: '待審查' }, { id: 'approved', label: '已核准' }, { id: 'returned', label: '已退回' }];
+            const onChanged = async () => { await load(); refreshPending(); };
+
+            return (
+                <PageShell>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">審查代禱</h2>
+                    <TabBar tabs={tabs} value={tab} onChange={setTab} />
+                    {status === 'loading' && <Skeletons />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入審查清單，請稍後再試" onRetry={load} />}
+                    {status === 'ok' && posts.length === 0 && <EmptyBox message={tab === 'pending' ? '目前沒有待審查的代禱' : '這個分類目前沒有代禱'} />}
+                    {status === 'ok' && posts.length > 0 && (
+                        <ul className="flex flex-col gap-4">
+                            {posts.map(p => <ReviewCard key={p.id} post={p} session={session} isAdmin={role === 'admin'} onChanged={onChanged} />)}
+                        </ul>
+                    )}
+                </PageShell>
+            );
+        };
+
+        // ==========================================
+        // 外框：頁首（名稱 + 口號小字）、導覽列與網址切換
+        // 網址：prayer.html / #/p/編號 / #/submit / #/mine / #/edit/編號 / #/review
+        // ==========================================
+        const UUID = '([0-9a-fA-F-]{36})';
+        const parseRoute = () => {
+            const h = window.location.hash;
+            if (h === '#/submit') return { name: 'submit' };
+            if (h === '#/mine') return { name: 'mine' };
+            if (h === '#/review') return { name: 'review' };
+            let m = h.match(new RegExp(`^#/p/${UUID}$`));
+            if (m) return { name: 'detail', id: m[1] };
+            m = h.match(new RegExp(`^#/edit/${UUID}$`));
+            if (m) return { name: 'edit', id: m[1] };
+            return { name: 'home' };
+        };
+        const go = (hash) => { window.location.hash = hash; window.scrollTo(0, 0); };
+
+        const App = () => {
+            const [route, setRoute] = useState(parseRoute());
+            const [session, setSession] = useState(null);
+            const [sessionReady, setSessionReady] = useState(false);
+            const [role, setRole] = useState(null);
+            const [pending, setPending] = useState(0);
+            const [showLogin, setShowLogin] = useState(false);
+            const [flash, setFlash] = useState('');
+
+            useEffect(() => {
+                const onHash = () => { setRoute(parseRoute()); };
                 window.addEventListener('hashchange', onHash);
                 return () => window.removeEventListener('hashchange', onHash);
             }, []);
 
-            const openDetail = (id) => { window.location.hash = `#/p/${id}`; window.scrollTo(0, 0); };
-            const goHome = () => { window.location.hash = ''; };
+            useEffect(() => {
+                supabase.auth.getSession().then(({ data }) => { setSession(data.session); setSessionReady(true); });
+                const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => { setSession(s); setSessionReady(true); });
+                return () => subscription.unsubscribe();
+            }, []);
+
+            // 登入後讀自己的角色（只是決定要不要顯示審查入口；真正權限在資料庫）
+            useEffect(() => {
+                setRole(null); setPending(0);
+                if (!session?.user?.id) return;
+                let alive = true;
+                supabase.from('user_roles').select('role').eq('user_uid', session.user.id).maybeSingle()
+                    .then(({ data }) => { if (alive) setRole(data?.role || 'user'); });
+                return () => { alive = false; };
+            }, [session?.user?.id]);
+
+            const isReviewer = REVIEWER_ROLES.includes(role);
+            const refreshPending = useCallback(() => { api.pendingCount().then(setPending).catch(() => {}); }, []);
+            useEffect(() => { if (isReviewer) refreshPending(); }, [isReviewer, refreshPending]);
+
+            // 提示訊息 6 秒後自動消失
+            const notify = (msg) => setFlash(msg);
+            useEffect(() => {
+                if (!flash) return;
+                const t = setTimeout(() => setFlash(''), 6000);
+                return () => clearTimeout(t);
+            }, [flash]);
+
+            const logout = async () => { await supabase.auth.signOut(); go('#'); };
+            const goHome = () => go('#');
+            const goMine = () => go('#/mine');
+            const openDetail = (id) => go(`#/p/${id}`);
+            const requireLogin = (hash) => { if (!session) setShowLogin(true); else go(hash); };
+
+            const navItems = [
+                { id: 'home', label: '搜尋', onClick: goHome },
+                { id: 'submit', label: '提報代禱', onClick: () => requireLogin('#/submit') },
+                ...(session ? [{ id: 'mine', label: '我的代禱', onClick: goMine }] : []),
+                ...(isReviewer ? [{ id: 'review', label: '審查', badge: pending, onClick: () => go('#/review') }] : []),
+            ];
+            const activeNav = route.name === 'detail' ? 'home' : route.name === 'edit' ? 'mine' : route.name;
+
+            let body;
+            if (!sessionReady && ['submit', 'mine', 'edit', 'review'].includes(route.name)) body = <PageShell><Skeletons /></PageShell>;
+            else if (route.name === 'detail') body = <DetailView key={route.id} id={route.id} goHome={goHome} />;
+            else if (route.name === 'submit') body = <SubmitView session={session} onLogin={() => setShowLogin(true)} goMine={goMine} goHome={goHome} notify={notify} />;
+            else if (route.name === 'mine') body = <MineView session={session} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} goSubmit={() => go('#/submit')} flash={flash} />;
+            else if (route.name === 'edit') body = <EditView key={route.id} id={route.id} session={session} onLogin={() => setShowLogin(true)} goMine={goMine} notify={notify} />;
+            else if (route.name === 'review') body = <ReviewView session={session} role={role} onLogin={() => setShowLogin(true)} goHome={goHome} refreshPending={refreshPending} />;
+            else body = <HomeView openDetail={openDetail} />;
 
             return (
                 <div className="min-h-screen flex flex-col">
                     <header className="bg-white border-b border-zinc-200 sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-                        <div className="max-w-2xl mx-auto w-full px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+                        <div className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-3 flex items-center justify-between gap-4">
                             <a href="#" onClick={(e) => { e.preventDefault(); goHome(); }} className={`flex items-baseline gap-3 min-w-0 rounded-md ${focusRing}`}>
                                 <h1 className="text-lg font-black text-zinc-900 tracking-tight shrink-0">守望代禱</h1>
                                 <span className="text-xs text-zinc-500 truncate">彼此相顧，激發愛心，勉勵行善</span>
                             </a>
-                            <a href="./index.html" className={`shrink-0 px-3 py-2 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>回首頁</a>
+                            <div className="flex items-center gap-1 shrink-0">
+                                <a href="./index.html" className={`px-3 py-2 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>回首頁</a>
+                                {session
+                                    ? <button onClick={logout} className={`px-3 py-2 rounded-lg text-sm font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`}>登出</button>
+                                    : <button onClick={() => setShowLogin(true)} className={`px-3 py-2 rounded-lg text-sm font-bold text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 transition-colors duration-150 ${focusRing}`}>登入</button>}
+                            </div>
                         </div>
+                        <nav className="max-w-2xl mx-auto w-full px-4 sm:px-6 flex overflow-x-auto no-scrollbar gap-1" aria-label="主選單">
+                            {navItems.map(n => {
+                                const active = activeNav === n.id;
+                                return (
+                                    <button key={n.id} onClick={n.onClick} aria-current={active ? 'page' : undefined}
+                                        className={`relative whitespace-nowrap px-3 py-2.5 text-sm font-bold border-b-2 transition-colors duration-150 ${focusRing} ${active ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}>
+                                        {n.label}
+                                        {n.badge > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-xs font-bold tabular-nums">{n.badge}</span>}
+                                    </button>
+                                );
+                            })}
+                        </nav>
                     </header>
 
-                    {detailId
-                        ? <DetailView key={detailId} id={detailId} goHome={goHome} />
-                        : <HomeView openDetail={openDetail} />}
+                    {route.name !== 'mine' && flash && (
+                        <div className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-4"><div role="status" className="text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2.5">{flash}</div></div>
+                    )}
+
+                    {body}
+                    {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
                 </div>
             );
         };
