@@ -29,6 +29,9 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.25s ease-out forwards; }
         /* 手機上輸入框字級 16px，避免 iOS 自動放大畫面 */
+        @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+        .animate-pop { animation: pop 0.35s ease-out; }
+        @media (prefers-reduced-motion: reduce) { .animate-pop { animation: none; } }
         input, textarea, select { font-size: 16px !important; }
     </style>
 </head>
@@ -314,31 +317,49 @@
         // ==========================================
         // 「我已禱告」按鈕（免登入；一次、不可取消；次數由資料庫計算）
         // ==========================================
+        // 禱告圖示：手捧愛心。未禱告＝灰色線條；已禱告＝綠色實心
+        const PrayIcon = ({ size = 28, filled }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11 14h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 16" />
+                <path d="m7 20 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" />
+                <path d="m2 15 6 6" />
+                <path d="M19.5 8.5c.7-.7 1.5-1.6 1.5-2.7A2.73 2.73 0 0 0 16 4a2.78 2.78 0 0 0-5 1.8c0 1.2.8 2 1.5 2.8L16 12Z" fill={filled ? 'currentColor' : 'none'} />
+            </svg>
+        );
+
+        // 像 IG 的愛心：點圖示立即變色並加一；按過就不能取消。失敗時會自動還原並提示。
         const PrayButton = ({ postId, count, responded, onResponded }) => {
-            const [busy, setBusy] = useState(false);
+            const [local, setLocal] = useState({ count, responded });
+            const [popping, setPopping] = useState(false);
             const [error, setError] = useState('');
+            useEffect(() => { setLocal({ count, responded }); }, [count, responded]);
 
             const click = async () => {
-                setBusy(true); setError('');
+                if (local.responded) return;
+                const before = local;
+                setLocal({ count: before.count + 1, responded: true });
+                setPopping(true); setTimeout(() => setPopping(false), 400);
+                setError('');
                 try {
                     const r = await api.respond(postId);
-                    onResponded(Number(r?.response_count ?? count + 1));
+                    const n = Number(r?.response_count ?? before.count + 1);
+                    setLocal({ count: n, responded: true });
+                    onResponded(n);
                 } catch (err) {
+                    setLocal(before);
                     setError(err.message || '暫時無法送出，請稍後再試');
-                } finally { setBusy(false); }
+                }
             };
 
+            const label = local.responded ? `已禱告，禱告回應次數 ${local.count}` : `我已禱告，目前禱告回應次數 ${local.count}`;
             return (
                 <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-3">
-                        {responded ? (
-                            <span className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
-                                <CheckIcon size={16} /> 已禱告
-                            </span>
-                        ) : (
-                            <button type="button" onClick={click} disabled={busy} className={btnPrimary}>{busy ? '送出中…' : '我已禱告'}</button>
-                        )}
-                        <span className="text-xs text-zinc-500">禱告回應次數 <span className="font-mono tabular-nums font-bold text-zinc-800">{count}</span></span>
+                    <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={click} aria-pressed={local.responded} aria-label={label} title={local.responded ? '已禱告' : '我已禱告'}
+                            className={`-ml-1.5 p-1.5 rounded-full transition-colors duration-150 ${focusRing} ${popping ? 'animate-pop' : ''} ${local.responded ? 'text-emerald-600 cursor-default' : 'text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100'}`}>
+                            <PrayIcon filled={local.responded} />
+                        </button>
+                        <span className={`text-sm font-mono tabular-nums font-bold ${local.responded ? 'text-emerald-600' : 'text-zinc-500'}`}>{local.count}</span>
                     </div>
                     <InlineError message={error} />
                 </div>
@@ -409,7 +430,7 @@
                                                 <span className="tabular-nums font-mono">{formatDate(p.created_at)}</span>
                                             </div>
                                         </button>
-                                        <div className="mx-5 sm:mx-6 pb-5 sm:pb-6 pt-4 border-t border-zinc-100">
+                                        <div className="px-5 sm:px-6 pb-4 sm:pb-5">
                                             <PrayButton postId={p.id} count={Number(p.response_count) || 0} responded={!!p.has_responded}
                                                 onResponded={(n) => setResults(list => list.map(x => x.id === p.id ? { ...x, response_count: n, has_responded: true } : x))} />
                                         </div>
@@ -749,7 +770,7 @@
                     {(
                         <div className="flex flex-col gap-4 pt-4 border-t border-zinc-100">
                             <fieldset className="flex flex-col gap-2">
-                                <legend className="text-xs font-bold text-zinc-500 mb-1">分類（可調整，會留下審查紀錄）</legend>
+                                <legend className="text-xs font-bold text-zinc-500 mb-1">分類（可調整，不留下審查紀錄）</legend>
                                 <div className="flex flex-wrap gap-2">
                                     {SUBMIT_CATEGORIES.map(c => {
                                         const active = post.category === c.id;
