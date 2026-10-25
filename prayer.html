@@ -435,7 +435,42 @@
             return isNaN(d) ? '' : `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
         };
 
-        const PostCard = ({ p, onResponded }) => {
+        // 內文固定顯示 3 行；超過才出現「...更多」，就地展開，展開後最後出現「較少」
+        const ClampText = ({ text }) => {
+            const [expanded, setExpanded] = useState(false);
+            const [clamped, setClamped] = useState(false);
+            const textRef = useRef(null);
+
+            // 量一量：內文超過 3 行才需要「...更多」
+            const measure = useCallback(() => {
+                const el = textRef.current;
+                if (el) setClamped(el.scrollHeight > el.clientHeight + 1);
+            }, []);
+            useLayoutEffect(() => { if (!expanded) measure(); }, [expanded, text, measure]);
+            useEffect(() => {
+                window.addEventListener('resize', measure);
+                if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure);
+                return () => window.removeEventListener('resize', measure);
+            }, [measure]);
+
+            const moreCls = `text-[15px] leading-6 font-bold text-zinc-400 hover:text-zinc-700 active:text-zinc-900 transition-colors duration-150 rounded ${focusRing}`;
+            return expanded ? (
+                <p className="text-[15px] leading-6 text-zinc-700 whitespace-pre-line break-words">
+                    {text}
+                    <button type="button" onClick={() => setExpanded(false)} aria-expanded="true" className={`ml-2 ${moreCls}`}>較少</button>
+                </p>
+            ) : (
+                <div className="relative">
+                    <p ref={textRef} className="text-[15px] leading-6 text-zinc-700 whitespace-pre-line break-words line-clamp-3">{text}</p>
+                    {clamped && (
+                        <button type="button" onClick={() => setExpanded(true)} aria-expanded="false"
+                            className={`absolute right-0 bottom-0 pl-10 bg-gradient-to-l from-white from-70% to-transparent ${moreCls}`}>...更多</button>
+                    )}
+                </div>
+            );
+        };
+
+        const PostCard =({ p, onResponded }) => {
             const [error, setError] = useState('');
             const text = p.content ?? p.summary ?? '';
             return (
