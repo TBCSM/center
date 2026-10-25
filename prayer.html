@@ -115,6 +115,12 @@
         const btnPrimary = `px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-colors duration-150 ${disabledCls} ${focusRing}`;
         const btnDark = `px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-700 active:bg-zinc-800 transition-colors duration-150 ${disabledCls} ${focusRing}`;
         const btnOutline = `px-4 py-2.5 rounded-xl text-sm font-bold border border-zinc-200 text-zinc-700 bg-white hover:bg-zinc-50 active:bg-zinc-100 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+        // 大按鈕（兩顆等寬並排）：取消＝淺灰框、主要動作＝深灰底白字、退回＝淡紅底紅字
+        const btnCancel = `h-12 rounded-lg border border-slate-300 bg-slate-50 text-slate-600 text-base font-medium hover:bg-slate-100 active:bg-slate-200 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+        const btnSubmitDark = `h-12 rounded-lg bg-zinc-800 text-white text-base font-medium hover:bg-zinc-900 active:bg-black transition-colors duration-150 ${disabledCls} ${focusRing}`;
+        const btnReturnSoft = `h-12 rounded-lg bg-red-100 text-red-700 text-base font-medium hover:bg-red-200 active:bg-red-300 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+        // 卡片右上角的小按鈕（編輯、取消、儲存、編輯重新送審）
+        const btnGhost = `inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium text-zinc-600 bg-zinc-50 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${disabledCls} ${focusRing}`;
         const btnDanger = `px-4 py-2.5 rounded-xl text-sm font-bold border border-red-200 text-red-700 bg-white hover:bg-red-50 active:bg-red-100 transition-colors duration-150 ${disabledCls} ${focusRing}`;
         const inputCls = "w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-zinc-800 font-medium hover:border-zinc-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 transition-colors duration-150";
 
@@ -744,9 +750,9 @@
 
                     <InlineError message={error} />
 
-                    <div className="flex gap-3 justify-end pt-2 border-t border-zinc-100">
-                        <button type="button" onClick={onCancel} className={btnOutline}>取消</button>
-                        <button type="submit" disabled={busy || !ready} className={btnPrimary}>{busy ? '送出中…' : submitLabel}</button>
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                        <button type="button" onClick={onCancel} className={btnCancel}>取消</button>
+                        <button type="submit" disabled={busy || !ready} className={btnSubmitDark}>{busy ? '送出中…' : submitLabel}</button>
                     </div>
                 </form>
             );
@@ -821,6 +827,50 @@
             );
         };
 
+        // 「查看審查紀錄」：審查貼文與我的禱告共用同一個樣式
+        const HistoryToggle = ({ postId }) => {
+            const [show, setShow] = useState(false);
+            return (
+                <div className="pt-3">
+                    <button type="button" onClick={() => setShow(v => !v)} className={`text-sm font-bold text-zinc-500 hover:text-zinc-900 rounded px-1 -ml-1 transition-colors duration-150 ${focusRing}`}>{show ? '收合審查紀錄' : '查看審查紀錄'}</button>
+                    {show && <div className="mt-3"><HistoryList postId={postId} /></div>}
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 我的禱告：卡片格式同「審查貼文」
+        // ==========================================
+        const MyPostCard = ({ post, reason, showStatus, goEdit }) => {
+            const returned = post.review_status === 'returned';
+            const name = post.show_name ? post.author_name : ANON_NAME;
+            return (
+                <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
+                    <div className="flex items-center justify-between gap-3 mb-2.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <CategoryAvatar id={post.category} />
+                            <span className="text-[15px] font-bold text-zinc-900 truncate min-w-0">{name}</span>
+                        </div>
+                        {returned && <button type="button" onClick={() => goEdit(post.id)} className={`${btnGhost} shrink-0`}><PencilIcon size={16} />編輯重新送審</button>}
+                    </div>
+                    <ClampText text={post.content} />
+                    {returned && (
+                        <div className="bg-red-50 border border-red-100 rounded-lg p-3 mt-3">
+                            <p className="text-xs font-bold text-red-700 mb-1">退回原因{reason ? `（${reason.actor_name}）` : ''}</p>
+                            <p className="text-sm text-red-900 whitespace-pre-line">{reason?.reason || '—'}</p>
+                        </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
+                        <span className="inline-flex items-center gap-1.5 text-sm tabular-nums shrink-0">
+                            <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(post.created_at)}
+                        </span>
+                        {showStatus && <StatusBadge status={post.review_status} />}
+                    </div>
+                    <HistoryToggle postId={post.id} />
+                </li>
+            );
+        };
+
         // ==========================================
         // 我的禱告
         // ==========================================
@@ -861,31 +911,7 @@
                     {status === 'ok' && shown.length === 0 && <EmptyBox message={tab === 'all' ? '你還沒有貼文' : '這個分類目前沒有禱告'} />}
                     {status === 'ok' && shown.length > 0 && (
                         <ul className="flex flex-col gap-4">
-                            {shown.map(p => {
-                                const r = reasons[p.id];
-                                return (
-                                    <li key={p.id} className="bg-white p-5 sm:p-6 rounded-xl border border-zinc-200 shadow-sm">
-                                        <div className="flex flex-wrap items-center gap-2 mb-3">
-                                            <StatusBadge status={p.review_status} /><CategoryBadge id={p.category} /><VisibilityBadge isPublic={p.is_public} />
-                                        </div>
-                                        <p className="text-zinc-700 leading-relaxed line-clamp-3 whitespace-pre-line mb-3">{p.content}</p>
-                                        {p.review_status === 'returned' && (
-                                            <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
-                                                <p className="text-xs font-bold text-red-700 mb-1">退回原因{r ? `（${r.actor_name}）` : ''}</p>
-                                                <p className="text-sm text-red-900 whitespace-pre-line">{r?.reason || '—'}</p>
-                                            </div>
-                                        )}
-                                        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-zinc-100">
-                                            <span className="text-xs text-zinc-400 font-mono tabular-nums">{formatDate(p.created_at)}</span>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setOpenHistory(openHistory === p.id ? null : p.id)} className={btnOutline}>{openHistory === p.id ? '收合紀錄' : '審查紀錄'}</button>
-                                                {p.review_status === 'returned' && <button onClick={() => goEdit(p.id)} className={btnPrimary}>編輯重新送審</button>}
-                                            </div>
-                                        </div>
-                                        {openHistory === p.id && <div className="mt-4"><HistoryList postId={p.id} /></div>}
-                                    </li>
-                                );
-                            })}
+                            {shown.map(p => <MyPostCard key={p.id} post={p} reason={reasons[p.id]} showStatus={tab === 'all'} goEdit={goEdit} />)}
                         </ul>
                     )}
                 </PageShell>
@@ -953,7 +979,6 @@
             const [isPublic, setIsPublic] = useState(post.is_public);   // 待審查：核准時才套用
             const [returning, setReturning] = useState(false);
             const [reason, setReason] = useState('');
-            const [showHistory, setShowHistory] = useState(false);
             const [busy, setBusy] = useState(false);
             const [error, setError] = useState('');
             const [editing, setEditing] = useState(false);
@@ -1037,15 +1062,9 @@
                     </div>
                 </fieldset>
             );
-            const historyBlock = (
-                <div className="pt-3">
-                    <button onClick={() => setShowHistory(s => !s)} className={`text-sm font-bold text-zinc-500 hover:text-zinc-900 rounded px-1 -ml-1 transition-colors duration-150 ${focusRing}`}>{showHistory ? '收合審查紀錄' : '查看審查紀錄'}</button>
-                    {showHistory && <div className="mt-3"><HistoryList postId={post.id} /></div>}
-                </div>
-            );
-
+            const historyBlock = <HistoryToggle postId={post.id} />;
             const shownName = post.show_name ? post.author_name : ANON_NAME;
-            const ghostBtn = `inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium text-zinc-600 bg-zinc-50 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+            const ghostBtn = btnGhost;
             const timeSpan = (
                 <span className="inline-flex items-center gap-1.5 text-sm tabular-nums shrink-0">
                     <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(post.created_at)}
@@ -1078,82 +1097,65 @@
                 );
             }
 
-            // 已核准：顯示方式同禱告牆；按右上角「編輯」才能改內容與各項設定
-            if (!pending) {
-                const actions = (
-                    <div className="flex items-center gap-1 shrink-0">
-                        {editing && <button type="button" onClick={cancelEdit} disabled={saving} className={ghostBtn}><XMarkIcon size={16} />取消</button>}
-                        <button type="button" onClick={editing ? saveEdit : startEdit} disabled={saving} aria-expanded={editing} className={ghostBtn}>
-                            {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中…' : '儲存') : '編輯'}
-                        </button>
+            // 待審查／已核准：顯示方式相同；按右上角「編輯」才展開內容與各項設定。待審查多了下方的核准、退回。
+            const actions = (
+                <div className="flex items-center gap-1 shrink-0">
+                    {editing && <button type="button" onClick={cancelEdit} disabled={saving} className={ghostBtn}><XMarkIcon size={16} />取消</button>}
+                    <button type="button" onClick={editing ? saveEdit : startEdit} disabled={saving} aria-expanded={editing} className={ghostBtn}>
+                        {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中…' : '儲存') : '編輯'}
+                    </button>
+                </div>
+            );
+            const decideBlock = !pending ? null : returning ? (
+                <div className="flex flex-col gap-3 mt-4">
+                    <label className="text-sm font-bold text-zinc-700" htmlFor={`reason-${post.id}`}>退回原因</label>
+                    <textarea id={`reason-${post.id}`} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} autoFocus className={`${inputCls} resize-y`} />
+                    <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => { setReturning(false); setReason(''); setError(''); }} disabled={busy} className={btnCancel}>取消</button>
+                        <button onClick={() => run(() => api.returnPost(post.id, reason))} disabled={busy || !reason.trim()} className={btnReturnSoft}>{busy ? '處理中…' : '退回'}</button>
                     </div>
-                );
-                return (
-                    <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
-                        {headerRow(actions)}
-                        {editing ? (
-                            <label className="flex flex-col gap-1.5">
-                                <span className="flex justify-between text-xs font-bold text-zinc-500">內容 <span className="font-mono tabular-nums text-zinc-400">{draft.content.length}/800</span></span>
-                                <textarea value={draft.content} onChange={(e) => setDraft(d => ({ ...d, content: e.target.value }))} maxLength={800} rows={6} className={`${inputCls} leading-relaxed resize-y`} />
-                            </label>
-                        ) : (
-                            <ClampText text={post.content} />
-                        )}
-                        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">{timeSpan}</div>
-                        {editing && (
-                            <div className="flex flex-col gap-4 mt-4 pt-4 border-t border-zinc-100">
-                                {categoryFields}
-                                {visibilityFields}
-                                {privacyFields}
-                                <InlineError message={error} />
-                                {historyBlock}
-                            </div>
-                        )}
-                    </li>
-                );
-            }
-
-            // 待審查：貼文顯示同禱告牆；下方是提報者（真實姓名）與時間，再來是分類、誰可以看到貼文、隱私設定
+                </div>
+            ) : (
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                    <button onClick={() => run(() => api.approve(post.id, isPublic))} disabled={busy}
+                        className={`inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white text-base font-medium transition-colors duration-150 ${disabledCls} ${focusRing}`}>
+                        <CheckIcon size={18} />{busy ? '處理中…' : '核准'}
+                    </button>
+                    <button onClick={() => setReturning(true)} disabled={busy}
+                        className={`inline-flex items-center justify-center gap-2 h-12 rounded-xl border border-red-300 bg-white hover:bg-red-50 active:bg-red-100 text-red-700 text-base font-medium transition-colors duration-150 ${disabledCls} ${focusRing}`}>
+                        <UndoIcon size={18} />退回
+                    </button>
+                </div>
+            );
             return (
-                <li className="bg-white p-4 sm:p-5 rounded-xl border border-zinc-200 shadow-sm">
-                    {headerRow(null)}
-                    <ClampText text={post.content} />
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 mb-4 text-zinc-500">
-                        <span className="inline-flex items-center gap-1.5 text-sm min-w-0">
-                            <UserIcon size={18} /><span className="sr-only">提報者：</span><span className="truncate max-w-[10rem]">{post.author_name}</span>
-                        </span>
+                <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
+                    {headerRow(actions)}
+                    {editing ? (
+                        <label className="flex flex-col gap-1.5">
+                            <span className="flex justify-between text-xs font-bold text-zinc-500">內容 <span className="font-mono tabular-nums text-zinc-400">{draft.content.length}/800</span></span>
+                            <textarea value={draft.content} onChange={(e) => setDraft(d => ({ ...d, content: e.target.value }))} maxLength={800} rows={6} className={`${inputCls} leading-relaxed resize-y`} />
+                        </label>
+                    ) : (
+                        <ClampText text={post.content} />
+                    )}
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
+                        {pending && (
+                            <span className="inline-flex items-center gap-1.5 text-sm min-w-0">
+                                <UserIcon size={18} /><span className="sr-only">提報者：</span><span className="truncate max-w-[10rem]">{post.author_name}</span>
+                            </span>
+                        )}
                         {timeSpan}
                     </div>
-
-                    <div className="flex flex-col gap-4 pt-4 border-t border-zinc-100">
-                        {categoryFields}
-                        {visibilityFields}
-                        {privacyFields}
-                        {returning ? (
-                            <div className="flex flex-col gap-2">
-                                <label className="text-xs font-bold text-zinc-500" htmlFor={`reason-${post.id}`}>退回原因（必填，提報者會看到）</label>
-                                <textarea id={`reason-${post.id}`} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} autoFocus className={`${inputCls} resize-y`} />
-                                <div className="flex gap-2 justify-end">
-                                    <button onClick={() => { setReturning(false); setReason(''); setError(''); }} disabled={busy} className={btnOutline}>取消</button>
-                                    <button onClick={() => run(() => api.returnPost(post.id, reason))} disabled={busy || !reason.trim()} className={btnDanger}>{busy ? '處理中…' : '退回'}</button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-2 gap-3">
-                                <button onClick={() => run(() => api.approve(post.id, isPublic))} disabled={busy}
-                                    className={`inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white text-base font-medium transition-colors duration-150 ${disabledCls} ${focusRing}`}>
-                                    <CheckIcon size={18} />{busy ? '處理中…' : '核准'}
-                                </button>
-                                <button onClick={() => setReturning(true)} disabled={busy}
-                                    className={`inline-flex items-center justify-center gap-2 h-12 rounded-xl border border-red-300 bg-white hover:bg-red-50 active:bg-red-100 text-red-700 text-base font-medium transition-colors duration-150 ${disabledCls} ${focusRing}`}>
-                                    <UndoIcon size={18} />退回
-                                </button>
-                            </div>
-                        )}
-                        <InlineError message={error} />
-                    </div>
-
-                    {historyBlock}
+                    {editing && (
+                        <div className="flex flex-col gap-4 mt-4 pt-4 border-t border-zinc-100">
+                            {categoryFields}
+                            {visibilityFields}
+                            {privacyFields}
+                            {historyBlock}
+                        </div>
+                    )}
+                    {decideBlock}
+                    <div className="mt-2"><InlineError message={error} /></div>
                 </li>
             );
         };
@@ -1269,7 +1271,7 @@
                                     </div>
                                     <div className="flex justify-end gap-2">
                                         {!n.is_read && <button onClick={() => markOne(n)} className={btnOutline}>標為已讀</button>}
-                                        <button onClick={() => open(n)} className={btnPrimary}>編輯重新送審</button>
+                                        <button onClick={() => open(n)} className={btnGhost}><PencilIcon size={16} />編輯重新送審</button>
                                     </div>
                                 </li>
                             ))}
