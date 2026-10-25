@@ -145,9 +145,14 @@
         // ==========================================
         // 資料存取：全部透過資料庫的窗口（函式）或受警衛規則保護的查詢
         // ==========================================
+        // 登入過期時通知畫面請使用者重新登入，而不是只顯示看不懂的錯誤
+        const fail = (error) => {
+            if (error && (error.status === 401 || /jwt expired|invalid jwt/i.test(error.message || ''))) window.dispatchEvent(new Event('tbc-auth-expired'));
+            throw error;
+        };
         const rpc = async (name, args) => {
             const { data, error } = await supabase.rpc(name, args);
-            if (error) throw error;
+            if (error) fail(error);
             return data;
         };
         const api = {
@@ -163,42 +168,42 @@
             setVisibility: (id, isPublic) => rpc('set_prayer_visibility', { p_id: id, p_is_public: isPublic }),
             myPosts: async (uid) => {
                 const { data, error } = await supabase.from('prayer_posts').select('*').eq('author_uid', uid).order('created_at', { ascending: false });
-                if (error) throw error;
+                if (error) fail(error);
                 return data || [];
             },
             postsByStatus: async (status) => {
                 const { data, error } = await supabase.from('prayer_posts').select('*').eq('review_status', status).order('created_at', { ascending: false });
-                if (error) throw error;
+                if (error) fail(error);
                 return data || [];
             },
             logsOfPost: async (id) => {
                 const { data, error } = await supabase.from('prayer_review_logs').select('*').eq('post_id', id).order('created_at', { ascending: true });
-                if (error) throw error;
+                if (error) fail(error);
                 return data || [];
             },
             latestReturnReasons: async (ids) => {
                 if (!ids.length) return {};
                 const { data, error } = await supabase.from('prayer_review_logs').select('post_id, reason, actor_name, created_at').eq('action', 'returned').in('post_id', ids).order('created_at', { ascending: true });
-                if (error) throw error;
+                if (error) fail(error);
                 const map = {};
                 (data || []).forEach(l => { map[l.post_id] = l; }); // 依時間排序，最後一筆就是最新的
                 return map;
             },
             notifications: async () => {
                 const { data, error } = await supabase.from('prayer_notifications').select('*').order('created_at', { ascending: false }).limit(100);
-                if (error) throw error;
+                if (error) fail(error);
                 return data || [];
             },
             unreadCount: async () => {
                 const { count, error } = await supabase.from('prayer_notifications').select('id', { count: 'exact', head: true }).eq('is_read', false);
-                if (error) throw error;
+                if (error) fail(error);
                 return count || 0;
             },
             markRead: (id) => rpc('mark_prayer_notification_read', { p_id: id }),
             markAllRead: () => rpc('mark_all_prayer_notifications_read', {}),
             pendingCount: async () => {
                 const { count, error } = await supabase.from('prayer_posts').select('id', { count: 'exact', head: true }).eq('review_status', 'pending');
-                if (error) throw error;
+                if (error) fail(error);
                 return count || 0;
             },
         };
@@ -407,7 +412,7 @@
             return (
                 <div className="flex items-center gap-1.5">
                     <button type="button" onClick={click} aria-pressed={local.responded} aria-label={label} title={local.responded ? '已禱告' : '我已禱告'}
-                        className={`-ml-1.5 p-1.5 rounded-full transition-colors duration-150 ${focusRing} ${popping ? 'animate-pop' : ''} ${local.responded ? 'text-emerald-600 cursor-default' : 'text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100'}`}>
+                        className={`-ml-2 p-2 rounded-full transition-colors duration-150 ${focusRing} ${popping ? 'animate-pop' : ''} ${local.responded ? 'text-emerald-600 cursor-default' : 'text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100'}`}>
                         <PrayIcon filled={local.responded} />
                     </button>
                     <span className={`text-sm font-mono tabular-nums font-bold ${local.responded ? 'text-emerald-600' : 'text-zinc-500'}`}>{local.count}</span>
@@ -497,13 +502,21 @@
         const HomeView = ({ goSubmit }) => {
             const [results, setResults] = useState([]);
             const [status, setStatus] = useState('loading');
+            const lastLoad = useRef(Date.now());
 
-            const load = useCallback(async () => {
-                setStatus('loading');
-                try { setResults(await api.search('', 'all')); setStatus('ok'); }
-                catch (err) { console.error('讀取禱告失敗:', err); setStatus('error'); }
+            // silent = true：背景更新，不顯示載入中的骨架畫面
+            const load = useCallback(async (silent) => {
+                if (silent !== true) setStatus('loading');
+                try { setResults(await api.search('', 'all')); setStatus('ok'); lastLoad.current = Date.now(); }
+                catch (err) { console.error('讀取禱告失敗:', err); if (silent !== true) setStatus('error'); }
             }, []);
             useEffect(() => { load(); }, [load]);
+            // 回到這個分頁時，如果超過 1 分鐘沒更新，就在背景更新最新貼文與次數
+            useEffect(() => {
+                const onVisible = () => { if (document.visibilityState === 'visible' && Date.now() - lastLoad.current > 60000) load(true); };
+                document.addEventListener('visibilitychange', onVisible);
+                return () => document.removeEventListener('visibilitychange', onVisible);
+            }, [load]);
 
             const patch = (id, n) => setResults(list => list.map(x => x.id === id ? { ...x, response_count: n, has_responded: true } : x));
 
@@ -512,13 +525,14 @@
                     <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight leading-snug mb-5">每一次禱告，都是一滴滋養生命的水</h2>
                     <section aria-live="polite">
                         {status === 'loading' && <Skeletons />}
-                        {status === 'error' && <ErrorBox message="暫時無法載入禱告事項，請稍後再試" onRetry={load} />}
+                        {status === 'error' && <ErrorBox message="暫時無法載入禱告事項，請稍後再試" onRetry={() => load()} />}
                         {status === 'ok' && results.length === 0 && <EmptyBox message="還沒有禱告，成為第一個分享的人吧" action={<button onClick={goSubmit} className={btnDark}>新增貼文</button>} />}
                         {status === 'ok' && results.length > 0 && (
                             <ul className="flex flex-col gap-3">
                                 {results.map(p => <PostCard key={p.id} p={p} onResponded={(n) => patch(p.id, n)} />)}
                             </ul>
                         )}
+                        {status === 'ok' && results.length >= 50 && <p className="text-center text-sm text-zinc-400 mt-6">只顯示最新 50 則，想找更早的請用右上角搜尋</p>}
                     </section>
                 </main>
             );
@@ -659,8 +673,14 @@
             </label>
         );
 
-        const PostForm = ({ initial, submitLabel, busy, error, onSubmit, onCancel }) => {
+        const PostForm = ({ initial, submitLabel, busy, error, onSubmit, onCancel, draftKey }) => {
             const [v, setV] = useState(initial);
+            // 草稿：打字時自動存在這個瀏覽器，不小心離開或重新整理也不會丟字（送出成功後才清掉）
+            useEffect(() => {
+                if (!draftKey) return;
+                const t = setTimeout(() => { try { localStorage.setItem(draftKey, JSON.stringify(v)); } catch (e) { /* 無法儲存就略過 */ } }, 500);
+                return () => clearTimeout(t);
+            }, [v, draftKey]);
             const set = (k, val) => setV(s => ({ ...s, [k]: val }));
             const submit = (e) => { e.preventDefault(); onSubmit({ ...v, title: v.title.trim(), content: v.content.trim() }); };
             const ready = v.title.trim() && v.content.trim() && v.category;
@@ -673,8 +693,8 @@
                     </label>
 
                     <label className="flex flex-col gap-1.5">
-                        <span className="flex justify-between text-sm font-bold text-zinc-700">內文 <span className="text-xs font-mono tabular-nums text-zinc-400">{v.content.length}/2000</span></span>
-                        <textarea value={v.content} onChange={(e) => set('content', e.target.value)} maxLength={2000} rows={7} required className={`${inputCls} leading-relaxed resize-y`} />
+                        <span className="flex justify-between text-sm font-bold text-zinc-700">內文 <span className="text-xs font-mono tabular-nums text-zinc-400">{v.content.length}/800</span></span>
+                        <textarea value={v.content} onChange={(e) => set('content', e.target.value)} maxLength={800} rows={7} required className={`${inputCls} leading-relaxed resize-y`} />
                     </label>
 
                     <fieldset className="flex flex-col gap-2">
@@ -717,6 +737,20 @@
         };
 
         const EMPTY_FORM = { title: '', content: '', category: '', is_public: true, show_name: true };
+        const DRAFT_KEY = 'tbc_prayer_draft';
+        const loadDraft = () => {
+            try {
+                const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+                if (!d || typeof d !== 'object') return EMPTY_FORM;
+                return {
+                    title: typeof d.title === 'string' ? d.title.slice(0, 100) : '',
+                    content: typeof d.content === 'string' ? d.content.slice(0, 800) : '',
+                    category: SUBMIT_CATEGORIES.some(c => c.id === d.category) ? d.category : '',
+                    is_public: d.is_public !== false, show_name: d.show_name !== false,
+                };
+            } catch (e) { return EMPTY_FORM; }
+        };
+        const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* 略過 */ } };
 
         const SubmitView = ({ session, onLogin, goMine, goHome, notify }) => {
             const [busy, setBusy] = useState(false);
@@ -727,6 +761,7 @@
                 setBusy(true); setError('');
                 try {
                     await api.submit(values);
+                    clearDraft();
                     notify('已送出，這則禱告現在是「待審查」，審查通過後才會公開。');
                     goMine();
                 } catch (err) { setError(err.message || '送出失敗，請稍後再試'); }
@@ -736,7 +771,7 @@
                 <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}>
                     <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">新增貼文</h2>
                     <p className="text-sm text-zinc-500 mb-6">審查通過後顯示於禱告牆；若通知退回，修正後可以再次送審，請耐心等候。</p>
-                    <PostForm initial={EMPTY_FORM} submitLabel="送出" busy={busy} error={error} onSubmit={handle} onCancel={goHome} />
+                    <PostForm initial={loadDraft()} draftKey={DRAFT_KEY} submitLabel="送出" busy={busy} error={error} onSubmit={handle} onCancel={goHome} />
                 </PageShell>
             );
         };
@@ -1307,12 +1342,17 @@
             // 提示訊息 6 秒後自動消失
             const notify = (msg) => setFlash(msg);
             useEffect(() => {
+                const onExpired = () => { setShowLogin(true); setFlash('登入已過期，請重新登入'); };
+                window.addEventListener('tbc-auth-expired', onExpired);
+                return () => window.removeEventListener('tbc-auth-expired', onExpired);
+            }, []);
+            useEffect(() => {
                 if (!flash) return;
                 const t = setTimeout(() => setFlash(''), 6000);
                 return () => clearTimeout(t);
             }, [flash]);
 
-            const logout = async () => { setMenuOpen(false); await supabase.auth.signOut(); go('#'); };
+            const logout = async () => { setMenuOpen(false); clearDraft(); await supabase.auth.signOut(); go('#'); };
             const goHome = () => go('#');
             const goMine = () => go('#/mine');
             const requireLogin = (hash) => { if (!session) setShowLogin(true); else go(hash); };
@@ -1338,7 +1378,7 @@
             else if (route.name === 'review') body = <ReviewView session={session} role={role} onLogin={() => setShowLogin(true)} goHome={goHome} refreshPending={refreshPending} />;
             else body = <HomeView goSubmit={() => requireLogin('#/submit')} />;
 
-            const iconBtn = `relative p-2 rounded-full text-zinc-800 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`;
+            const iconBtn = `relative inline-flex items-center justify-center w-11 h-11 max-[359px]:w-10 max-[359px]:h-10 rounded-full text-zinc-800 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${focusRing}`;
 
             return (
                 <div className="min-h-screen flex flex-col">
@@ -1353,7 +1393,7 @@
                                     {menuOpen && <MenuDropdown onClose={() => setMenuOpen(false)} items={menuItems} />}
                                 </div>
                                 <a href="#" onClick={(e) => { e.preventDefault(); goHome(); }} className={`justify-self-center px-2 rounded-md ${focusRing}`}>
-                                    <h1 className="text-lg font-black text-zinc-900 tracking-tight whitespace-nowrap">守望花園</h1>
+                                    <h1 className="text-base min-[360px]:text-lg font-black text-zinc-900 tracking-tight whitespace-nowrap">守望花園</h1>
                                 </a>
                                 <div className="justify-self-end flex items-center">
                                     <button onClick={() => requireLogin('#/submit')} aria-label="新增貼文" title="新增貼文" className={iconBtn}><SquarePlusIcon size={24} /></button>
