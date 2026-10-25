@@ -375,16 +375,11 @@
 
                         <div className="w-full max-w-md flex items-center justify-between mb-4 relative z-20">
                             <NavMenu light />
-                            <span className="text-lg font-black tracking-tight text-slate-800">會友登入</span>
+                            <span className="text-lg font-black tracking-tight text-slate-800">{isSignUp ? '歡迎註冊' : '歡迎登入'}</span>
                             <div className="w-11 h-11 shrink-0"></div>
                         </div>
 
                         <div className="bg-white max-w-md w-full rounded-[2rem] shadow-xl p-6 sm:p-8 border border-slate-100 animate-fade-in z-10 relative">
-                            <div className="flex flex-col items-center mb-8">
-                                <div className="bg-gradient-to-br from-indigo-600 to-emerald-600 p-4 rounded-xl text-white shadow-button mb-4"><Activity size={32} /></div>
-                                <h1 className="text-2xl font-black text-slate-900 text-center tracking-tight leading-tight">歡迎登入</h1>
-                            </div>
-
                             {errorMsg && (
                                 <div className="bg-red-50 text-red-600 text-sm font-bold p-3 rounded-xl mb-6 flex items-center gap-2 leading-relaxed">
                                     <AlertCircle size={18} className="shrink-0" /> {errorMsg}
@@ -449,7 +444,7 @@
                                 {isSignUp && (
                                     <div className="bg-amber-50 text-amber-700 text-xs font-bold p-3 rounded-xl border border-amber-100 flex items-start gap-2 leading-relaxed mt-2">
                                         <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                                        僅限本會同工註冊，「帳號申請」洽行政辦公室
+                                        僅限本會弟兄姊妹註冊，「帳號申請」洽行政辦公室
                                     </div>
                                 )}
 

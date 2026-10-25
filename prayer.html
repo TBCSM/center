@@ -61,9 +61,14 @@
             { id: 'church', label: '教會' },
             { id: 'fellowship', label: '團契' },
             { id: 'personal', label: '個人' },
+            { id: 'thanks', label: '感恩' },
         ];
         const SUBMIT_CATEGORIES = CATEGORIES.filter(c => c.id !== 'all');
         const categoryLabel = (id) => CATEGORIES.find(c => c.id === id)?.label || '';
+        // 匿名貼文顯示的名字
+        const ANON_NAME = '一位需要禱告的朋友';
+        // 已取消「標題」欄位：資料庫仍要求有標題，所以自動取內文第一行的前 30 字
+        const makeTitle = (content) => ((content || '').trim().split('\n')[0] || '').trim().slice(0, 30) || '貼文';
 
         const STATUS = {
             pending:  { label: '待審查', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -141,6 +146,13 @@
         const LogInIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="m10 17 5-5-5-5" /><path d="M15 12H3" /></React.Fragment>} />;
         const PencilIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></React.Fragment>} />;
         const TagIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></React.Fragment>} />;
+        const EarthIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M21.54 15H17a2 2 0 0 0-2 2v4.54" /><path d="M7 3.34V5a3 3 0 0 0 3 3a2 2 0 0 1 2 2c0 1.1.9 2 2 2a2 2 0 0 0 2-2c0-1.1.9-2 2-2h3.17" /><path d="M11 21.95V18a2 2 0 0 0-2-2a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H2.05" /><circle cx="12" cy="12" r="10" /></React.Fragment>} />;
+        const SendIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" /><path d="m21.854 2.147-10.94 10.939" /></React.Fragment>} />;
+        const ChurchIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M10 9h4" /><path d="M12 7v5" /><path d="M14 22v-4a2 2 0 0 0-4 0v4" /><path d="M18 22V5.618a1 1 0 0 0-.553-.894l-4.553-2.277a2 2 0 0 0-1.788 0L6.553 4.724A1 1 0 0 0 6 5.618V22" /><path d="m18 7 3.447 1.724a1 1 0 0 1 .553.894V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.618a1 1 0 0 1 .553-.894L6 7" /></React.Fragment>} />;
+        const UsersIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></React.Fragment>} />;
+        const SmileIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /></React.Fragment>} />;
+        const UndoIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></React.Fragment>} />;
+        const XMarkIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M18 6 6 18" /><path d="m6 6 12 12" /></React.Fragment>} />;
         const ActivityIcon = (p) => <Icon {...p} d={<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />} />;
 
         // ==========================================
@@ -219,6 +231,16 @@
         const CategoryTag = ({ id }) => (
             <span className="inline-flex items-center gap-1.5 text-sm shrink-0"><TagIcon size={18} /><span className="sr-only">分類：</span>{categoryLabel(id)}</span>
         );
+        // 貼文頭像：用「分類」的圖示（像 Threads 的大頭貼）
+        const CATEGORY_ICON = { kingdom: EarthIcon, outreach: SendIcon, church: ChurchIcon, fellowship: UsersIcon, personal: UserIcon, thanks: SmileIcon };
+        const CategoryAvatar = ({ id }) => {
+            const I = CATEGORY_ICON[id] || UserIcon;
+            return (
+                <span className="w-10 h-10 shrink-0 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center" title={categoryLabel(id)} role="img" aria-label={`分類：${categoryLabel(id)}`}>
+                    <I size={20} />
+                </span>
+            );
+        };
         const StatusBadge = ({ status }) => (
             <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-md border ${STATUS[status]?.cls || ''}`}>{STATUS[status]?.label || status}</span>
         );
@@ -329,16 +351,11 @@
                                 className={`w-11 h-11 shrink-0 flex items-center justify-center rounded-2xl bg-white border border-slate-100 shadow-sm text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors duration-150 ${focusRing}`}>
                                 <XIcon size={22} />
                             </button>
-                            <span className="text-lg font-black tracking-tight text-slate-800">會友登入</span>
+                            <span id="login-title" className="text-lg font-black tracking-tight text-slate-800">歡迎登入</span>
                             <div className="w-11 h-11 shrink-0"></div>
                         </div>
 
                         <div className="bg-white max-w-md w-full rounded-[2rem] shadow-xl p-6 sm:p-8 border border-slate-100 animate-fade-in z-10 relative">
-                            <div className="flex flex-col items-center mb-8">
-                                <div className="bg-gradient-to-br from-indigo-600 to-emerald-600 p-4 rounded-xl text-white shadow-md mb-4"><ActivityIcon size={32} /></div>
-                                <h1 id="login-title" className="text-2xl font-black text-slate-900 text-center tracking-tight leading-tight">歡迎登入</h1>
-                            </div>
-
                             <form onSubmit={submit} className="space-y-4 sm:space-y-5">
                                 <div className="space-y-1.5">
                                     <label htmlFor="login-account" className="text-xs font-bold text-slate-500 tracking-wider ml-1">帳號</label>
@@ -429,10 +446,16 @@
         // 貼文卡片（像 IG）：內文固定顯示 3 行，「...更多」就地展開、「較少」就地收合，不會跳頁。
         // 卡片底部由左到右：禱告（圖示＋次數）、貼文者、時間，都只有圖示沒有文字。
         // ==========================================
-        // 時間只顯示年月日（不顯示時分秒），例如 2026/10/25
+        // 時間像 Threads：幾分鐘、幾小時、幾天；超過 7 天顯示年月日
         const formatAgo = (iso) => {
             const d = new Date(iso);
-            return isNaN(d) ? '' : `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+            if (isNaN(d)) return '';
+            const sec = Math.max(0, (Date.now() - d.getTime()) / 1000);
+            if (sec < 60) return '剛剛';
+            if (sec < 3600) return `${Math.floor(sec / 60)}分鐘`;
+            if (sec < 86400) return `${Math.floor(sec / 3600)}小時`;
+            if (sec < 86400 * 7) return `${Math.floor(sec / 86400)}天`;
+            return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
         };
 
         // 內文固定顯示 3 行；超過才出現「...更多」，就地展開，展開後最後出現「較少」
@@ -470,21 +493,21 @@
             );
         };
 
-        const PostCard =({ p, onResponded }) => {
+        const PostCard = ({ p, onResponded }) => {
             const [error, setError] = useState('');
             const text = p.content ?? p.summary ?? '';
+            const name = !p.display_name || p.display_name === '匿名' ? ANON_NAME : p.display_name;
             return (
                 <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
-                    <h3 className="text-base sm:text-lg font-black text-zinc-900 leading-snug break-words mb-1.5">{p.title}</h3>
+                    <div className="flex items-center gap-3 mb-2.5">
+                        <CategoryAvatar id={p.category} />
+                        <span className="text-[15px] font-bold text-zinc-900 truncate min-w-0">{name}</span>
+                    </div>
 
                     <ClampText text={text} />
 
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-zinc-500">
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
                         <PrayButton postId={p.id} count={Number(p.response_count) || 0} responded={!!p.has_responded} onResponded={onResponded} onError={setError} />
-                        <CategoryTag id={p.category} />
-                        <span className="inline-flex items-center gap-1.5 text-sm min-w-0">
-                            <UserIcon size={18} /><span className="sr-only">貼文者：</span><span className="truncate max-w-[9rem]">{p.display_name}</span>
-                        </span>
                         <span className="inline-flex items-center gap-1.5 text-sm tabular-nums shrink-0">
                             <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(p.created_at)}
                         </span>
@@ -680,18 +703,13 @@
                 return () => clearTimeout(t);
             }, [v, draftKey]);
             const set = (k, val) => setV(s => ({ ...s, [k]: val }));
-            const submit = (e) => { e.preventDefault(); onSubmit({ ...v, title: v.title.trim(), content: v.content.trim() }); };
-            const ready = v.title.trim() && v.content.trim() && v.category;
+            const submit = (e) => { e.preventDefault(); const content = v.content.trim(); onSubmit({ ...v, title: makeTitle(content), content }); };
+            const ready = v.content.trim() && v.category;
 
             return (
                 <form onSubmit={submit} className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-8 shadow-sm flex flex-col gap-6">
                     <label className="flex flex-col gap-1.5">
-                        <span className="flex justify-between text-sm font-bold text-zinc-700">標題 <span className="text-xs font-mono tabular-nums text-zinc-400">{v.title.length}/100</span></span>
-                        <input type="text" value={v.title} onChange={(e) => set('title', e.target.value)} maxLength={100} required className={inputCls} />
-                    </label>
-
-                    <label className="flex flex-col gap-1.5">
-                        <span className="flex justify-between text-sm font-bold text-zinc-700">內文 <span className="text-xs font-mono tabular-nums text-zinc-400">{v.content.length}/800</span></span>
+                        <span className="flex justify-between text-sm font-bold text-zinc-700">你想說什麼 <span className="text-xs font-mono tabular-nums text-zinc-400">{v.content.length}/800</span></span>
                         <textarea value={v.content} onChange={(e) => set('content', e.target.value)} maxLength={800} rows={7} required className={`${inputCls} leading-relaxed resize-y`} />
                     </label>
 
@@ -719,7 +737,7 @@
                     <fieldset className="flex flex-col gap-2">
                         <legend className="text-sm font-bold text-zinc-700 mb-1">隱私設定</legend>
                         <div className="flex flex-col sm:flex-row gap-3">
-                            <RadioCard name="show_name" checked={v.show_name === false} onChange={() => set('show_name', false)} title="匿名" hint="貼文顯示匿名" />
+                            <RadioCard name="show_name" checked={v.show_name === false} onChange={() => set('show_name', false)} title="匿名" hint="貼文顯示「一位需要禱告的朋友」" />
                             <RadioCard name="show_name" checked={v.show_name === true} onChange={() => set('show_name', true)} title="顯示姓名" hint="貼文顯示姓名" />
                         </div>
                     </fieldset>
@@ -850,8 +868,7 @@
                                         <div className="flex flex-wrap items-center gap-2 mb-3">
                                             <StatusBadge status={p.review_status} /><CategoryBadge id={p.category} /><VisibilityBadge isPublic={p.is_public} />
                                         </div>
-                                        <h3 className="text-lg font-black text-zinc-900 leading-snug mb-1">{p.title}</h3>
-                                        <p className="text-zinc-600 leading-relaxed line-clamp-3 whitespace-pre-line mb-3">{p.content}</p>
+                                        <p className="text-zinc-700 leading-relaxed line-clamp-3 whitespace-pre-line mb-3">{p.content}</p>
                                         {p.review_status === 'returned' && (
                                             <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
                                                 <p className="text-xs font-bold text-red-700 mb-1">退回原因{r ? `（${r.actor_name}）` : ''}</p>
@@ -941,7 +958,7 @@
             const [error, setError] = useState('');
             const [editing, setEditing] = useState(false);
             const [saving, setSaving] = useState(false);
-            const [draft, setDraft] = useState({ title: post.title, content: post.content });
+            const [draft, setDraft] = useState({ content: post.content });
 
             // 核准或退回：成功後這張卡片立刻從「待審查」消失，再到背景更新清單
             const run = async (fn) => {
@@ -966,12 +983,13 @@
                 }
             };
 
-            const startEdit = () => { setDraft({ title: post.title, content: post.content }); setError(''); setEditing(true); };
+            const startEdit = () => { setDraft({ content: post.content }); setError(''); setEditing(true); };
             const cancelEdit = () => { setEditing(false); setError(''); };
             const saveEdit = async () => {
-                const title = draft.title.trim(), content = draft.content.trim();
-                if (!title || !content) { setError('標題和內文都要填寫'); return; }
-                if (title === post.title && content === post.content) { setEditing(false); return; }
+                const content = draft.content.trim();
+                const title = makeTitle(content);
+                if (!content) { setError('內容不可空白'); return; }
+                if (content === post.content) { setEditing(false); return; }
                 setSaving(true); setError('');
                 try { await api.editContent(post.id, title, content); onPatch(post.id, { title, content }); setEditing(false); }
                 catch (err) { setError(err.message || '儲存失敗，請稍後再試'); }
@@ -1026,70 +1044,62 @@
                 </div>
             );
 
-            // 已退回：顯示方式與圖示同禱告牆貼文（退回的貼文沒有公開，所以愛心只是顯示、不能按，次數為 0）
+            const shownName = post.show_name ? post.author_name : ANON_NAME;
+            const ghostBtn = `inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium text-zinc-600 bg-zinc-50 hover:bg-zinc-100 active:bg-zinc-200 transition-colors duration-150 ${disabledCls} ${focusRing}`;
+            const timeSpan = (
+                <span className="inline-flex items-center gap-1.5 text-sm tabular-nums shrink-0">
+                    <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(post.created_at)}
+                </span>
+            );
+            const headerRow = (actions) => (
+                <div className="flex items-center justify-between gap-3 mb-2.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <CategoryAvatar id={post.category} />
+                        <span className="text-[15px] font-bold text-zinc-900 truncate min-w-0">{shownName}</span>
+                    </div>
+                    {actions}
+                </div>
+            );
+
+            // 已退回：顯示方式同禱告牆貼文（退回的貼文沒有公開，所以愛心只是顯示、不能按，次數為 0）
             if (post.review_status === 'returned') {
                 return (
                     <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
-                        <h3 className="text-base sm:text-lg font-black text-zinc-900 leading-snug break-words mb-1.5">{post.title}</h3>
+                        {headerRow(null)}
                         <ClampText text={post.content} />
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-zinc-500">
+                        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
                             <div className="flex items-center gap-1.5" aria-label="禱告回應次數 0">
                                 <span className="-ml-2 p-2 text-zinc-400"><PrayIcon /></span>
                                 <span className="text-sm font-mono tabular-nums font-bold text-zinc-500">0</span>
                             </div>
-                            <CategoryTag id={post.category} />
-                            <span className="inline-flex items-center gap-1.5 text-sm min-w-0">
-                                <UserIcon size={18} /><span className="sr-only">貼文者：</span><span className="truncate max-w-[9rem]">{post.show_name ? post.author_name : '匿名'}</span>
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 text-sm tabular-nums shrink-0">
-                                <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(post.created_at)}
-                            </span>
+                            {timeSpan}
                         </div>
                     </li>
                 );
             }
 
-            // 已核准：顯示方式同禱告牆；按右上角「編輯」才能改標題、內文與各項設定
+            // 已核准：顯示方式同禱告牆；按右上角「編輯」才能改內容與各項設定
             if (!pending) {
+                const actions = (
+                    <div className="flex items-center gap-1 shrink-0">
+                        {editing && <button type="button" onClick={cancelEdit} disabled={saving} className={ghostBtn}><XMarkIcon size={16} />取消</button>}
+                        <button type="button" onClick={editing ? saveEdit : startEdit} disabled={saving} aria-expanded={editing} className={ghostBtn}>
+                            {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中…' : '儲存') : '編輯'}
+                        </button>
+                    </div>
+                );
                 return (
                     <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <StatusBadge status={post.review_status} /><CategoryBadge id={post.category} /><VisibilityBadge isPublic={post.is_public} />
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                                {editing && <button type="button" onClick={cancelEdit} disabled={saving} className={`px-3 py-1.5 rounded-lg text-sm font-bold border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100 transition-colors duration-150 ${disabledCls} ${focusRing}`}>取消</button>}
-                                <button type="button" onClick={editing ? saveEdit : startEdit} disabled={saving} aria-expanded={editing}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold border transition-colors duration-150 active:scale-[0.98] ${disabledCls} ${focusRing} ${editing ? 'bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'}`}>
-                                    {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中…' : '儲存') : '編輯'}
-                                </button>
-                            </div>
-                        </div>
+                        {headerRow(actions)}
                         {editing ? (
-                            <div className="flex flex-col gap-3">
-                                <label className="flex flex-col gap-1.5">
-                                    <span className="flex justify-between text-xs font-bold text-zinc-500">標題 <span className="font-mono tabular-nums text-zinc-400">{draft.title.length}/100</span></span>
-                                    <input type="text" value={draft.title} onChange={(e) => setDraft(d => ({ ...d, title: e.target.value }))} maxLength={100} className={inputCls} />
-                                </label>
-                                <label className="flex flex-col gap-1.5">
-                                    <span className="flex justify-between text-xs font-bold text-zinc-500">內文 <span className="font-mono tabular-nums text-zinc-400">{draft.content.length}/800</span></span>
-                                    <textarea value={draft.content} onChange={(e) => setDraft(d => ({ ...d, content: e.target.value }))} maxLength={800} rows={6} className={`${inputCls} leading-relaxed resize-y`} />
-                                </label>
-                            </div>
+                            <label className="flex flex-col gap-1.5">
+                                <span className="flex justify-between text-xs font-bold text-zinc-500">內容 <span className="font-mono tabular-nums text-zinc-400">{draft.content.length}/800</span></span>
+                                <textarea value={draft.content} onChange={(e) => setDraft(d => ({ ...d, content: e.target.value }))} maxLength={800} rows={6} className={`${inputCls} leading-relaxed resize-y`} />
+                            </label>
                         ) : (
-                            <>
-                                <h3 className="text-base sm:text-lg font-black text-zinc-900 leading-snug break-words mb-1.5">{post.title}</h3>
-                                <ClampText text={post.content} />
-                            </>
+                            <ClampText text={post.content} />
                         )}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-zinc-500">
-                            <span className="inline-flex items-center gap-1.5 text-sm min-w-0">
-                                <UserIcon size={18} /><span className="sr-only">貼文者：</span><span className="truncate max-w-[9rem]">{post.show_name ? post.author_name : '匿名'}</span>
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 text-sm tabular-nums shrink-0">
-                                <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(post.created_at)}
-                            </span>
-                        </div>
+                        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">{timeSpan}</div>
                         {editing && (
                             <div className="flex flex-col gap-4 mt-4 pt-4 border-t border-zinc-100">
                                 {categoryFields}
@@ -1103,17 +1113,16 @@
                 );
             }
 
-            // 待審查：分類、誰可以看到貼文、隱私設定的排列與「已核准」相同
+            // 待審查：貼文顯示同禱告牆；下方是提報者（真實姓名）與時間，再來是分類、誰可以看到貼文、隱私設定
             return (
-                <li className="bg-white p-5 sm:p-6 rounded-xl border border-zinc-200 shadow-sm">
-                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                        <StatusBadge status={post.review_status} /><CategoryBadge id={post.category} /><VisibilityBadge isPublic={isPublic} />
-                    </div>
-                    <h3 className="text-lg font-black text-zinc-900 leading-snug mb-2">{post.title}</h3>
-                    <p className="text-zinc-700 leading-relaxed whitespace-pre-line break-words mb-4">{post.content}</p>
-                    <div className="text-xs text-zinc-500 flex flex-wrap items-center gap-x-2 gap-y-1 mb-4">
-                        <span>提報者：{post.author_name}</span><span aria-hidden="true">·</span>
-                        <span className="font-mono tabular-nums">{formatDateTime(post.created_at)}</span>
+                <li className="bg-white p-4 sm:p-5 rounded-xl border border-zinc-200 shadow-sm">
+                    {headerRow(null)}
+                    <ClampText text={post.content} />
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 mb-4 text-zinc-500">
+                        <span className="inline-flex items-center gap-1.5 text-sm min-w-0">
+                            <UserIcon size={18} /><span className="sr-only">提報者：</span><span className="truncate max-w-[10rem]">{post.author_name}</span>
+                        </span>
+                        {timeSpan}
                     </div>
 
                     <div className="flex flex-col gap-4 pt-4 border-t border-zinc-100">
@@ -1130,9 +1139,15 @@
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex gap-2 justify-end">
-                                <button onClick={() => setReturning(true)} disabled={busy} className={btnDanger}>退回</button>
-                                <button onClick={() => run(() => api.approve(post.id, isPublic))} disabled={busy} className={btnPrimary}>{busy ? '處理中…' : '核准'}</button>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => run(() => api.approve(post.id, isPublic))} disabled={busy}
+                                    className={`inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white text-base font-medium transition-colors duration-150 ${disabledCls} ${focusRing}`}>
+                                    <CheckIcon size={18} />{busy ? '處理中…' : '核准'}
+                                </button>
+                                <button onClick={() => setReturning(true)} disabled={busy}
+                                    className={`inline-flex items-center justify-center gap-2 h-12 rounded-xl border border-red-300 bg-white hover:bg-red-50 active:bg-red-100 text-red-700 text-base font-medium transition-colors duration-150 ${disabledCls} ${focusRing}`}>
+                                    <UndoIcon size={18} />退回
+                                </button>
                             </div>
                         )}
                         <InlineError message={error} />
