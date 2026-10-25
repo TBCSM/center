@@ -303,7 +303,7 @@
             const [password, setPassword] = useState('');
             const [confirmPassword, setConfirmPassword] = useState(''); 
             const [loading, setLoading] = useState(false);
-            const [isSignUp, setIsSignUp] = useState(false);
+            const [isSignUp, setIsSignUp] = useState(() => window.location.hash === '#signup');  // 從守望花園點「這裡」進來時，直接顯示設定密碼畫面
             const [errorMsg, setErrorMsg] = useState('');
             const [showPassword, setShowPassword] = useState(false);
             const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -375,7 +375,7 @@
 
                         <div className="w-full max-w-md flex items-center justify-between mb-4 relative z-20">
                             <NavMenu light />
-                            <span className="text-lg font-black tracking-tight text-slate-800">TBC Serve</span>
+                            <span className="text-lg font-black tracking-tight text-slate-800">會友登入</span>
                             <div className="w-11 h-11 shrink-0"></div>
                         </div>
 
@@ -449,7 +449,7 @@
                                 {isSignUp && (
                                     <div className="bg-amber-50 text-amber-700 text-xs font-bold p-3 rounded-xl border border-amber-100 flex items-start gap-2 leading-relaxed mt-2">
                                         <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                                        僅限本會同工註冊
+                                        僅限本會同工註冊，「帳號申請」洽行政辦公室
                                     </div>
                                 )}
 
@@ -465,7 +465,7 @@
                                     </div>
                                 ) : (
                                     <div className="text-sm font-medium text-slate-500">
-                                        沒有帳號？ <button type="button" onClick={() => { setIsSignUp(true); setErrorMsg(''); setConfirmPassword(''); setShowPassword(false); setShowConfirmPassword(false); }} className="font-bold text-indigo-600 hover:text-indigo-700 transition-colors py-1">建立一個吧！</button>
+                                        首次設定密碼？請<button type="button" onClick={() => { setIsSignUp(true); setErrorMsg(''); setConfirmPassword(''); setShowPassword(false); setShowConfirmPassword(false); }} className="font-bold text-indigo-600 hover:text-indigo-700 transition-colors py-1 px-0.5">點這裡</button>｜沒有帳號請洽行政辦公室
                                     </div>
                                 )}
                                 
