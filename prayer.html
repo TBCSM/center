@@ -67,8 +67,6 @@
         const categoryLabel = (id) => CATEGORIES.find(c => c.id === id)?.label || '';
         // 匿名貼文顯示的名字
         const ANON_NAME = '一位需要禱告的朋友';
-        // 已取消「標題」欄位：資料庫仍要求有標題，所以自動取內文第一行的前 30 字
-        const makeTitle = (content) => ((content || '').trim().split('\n')[0] || '').trim().slice(0, 30) || '貼文';
 
         const STATUS = {
             pending:  { label: '待審查', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -179,10 +177,10 @@
             detail: async (id) => { const d = await rpc('get_public_prayer', { p_id: id, p_visitor: getVisitorId() }); return (d && d[0]) || null; },
             respond: async (postId) => { const d = await rpc('respond_prayer', { p_post_id: postId, p_visitor: getVisitorId() }); return d && d[0]; },
             setCategory: (id, category) => rpc('set_prayer_category', { p_id: id, p_category: category }),
-            editContent: (id, title, content) => rpc('edit_prayer_content', { p_id: id, p_title: title, p_content: content }),
+            editContent: (id, content) => rpc('edit_prayer_content', { p_id: id, p_content: content }),
             setPrivacy: (id, showName) => rpc('set_prayer_privacy', { p_id: id, p_show_name: showName }),
-            submit: (v) => rpc('submit_prayer', { p_title: v.title, p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
-            resubmit: (id, v) => rpc('resubmit_prayer', { p_id: id, p_title: v.title, p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
+            submit: (v) => rpc('submit_prayer', { p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
+            resubmit: (id, v) => rpc('resubmit_prayer', { p_id: id, p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
             approve: (id, isPublic) => rpc('approve_prayer', { p_id: id, p_is_public: isPublic }),
             returnPost: (id, reason) => rpc('return_prayer', { p_id: id, p_reason: reason }),
             setVisibility: (id, isPublic) => rpc('set_prayer_visibility', { p_id: id, p_is_public: isPublic }),
@@ -210,7 +208,7 @@
                 return map;
             },
             notifications: async () => {
-                const { data, error } = await supabase.from('prayer_notifications').select('*').order('created_at', { ascending: false }).limit(100);
+                const { data, error } = await supabase.from('prayer_notifications').select('*, prayer_posts(content)').order('created_at', { ascending: false }).limit(100);
                 if (error) fail(error);
                 return data || [];
             },
@@ -709,7 +707,7 @@
                 return () => clearTimeout(t);
             }, [v, draftKey]);
             const set = (k, val) => setV(s => ({ ...s, [k]: val }));
-            const submit = (e) => { e.preventDefault(); const content = v.content.trim(); onSubmit({ ...v, title: makeTitle(content), content }); };
+            const submit = (e) => { e.preventDefault(); const content = v.content.trim(); onSubmit({ ...v, content }); };
             const ready = v.content.trim() && v.category;
 
             return (
@@ -758,14 +756,13 @@
             );
         };
 
-        const EMPTY_FORM = { title: '', content: '', category: '', is_public: true, show_name: true };
+        const EMPTY_FORM = { content: '', category: '', is_public: true, show_name: true };
         const DRAFT_KEY = 'tbc_prayer_draft';
         const loadDraft = () => {
             try {
                 const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
                 if (!d || typeof d !== 'object') return EMPTY_FORM;
                 return {
-                    title: typeof d.title === 'string' ? d.title.slice(0, 100) : '',
                     content: typeof d.content === 'string' ? d.content.slice(0, 800) : '',
                     category: SUBMIT_CATEGORIES.some(c => c.id === d.category) ? d.category : '',
                     is_public: d.is_public !== false, show_name: d.show_name !== false,
@@ -962,7 +959,7 @@
                     {status === 'notfound' && <EmptyBox message="找不到這則禱告，或它目前不是「已退回」狀態" action={<button onClick={goMine} className={btnDark}>回到我的禱告</button>} />}
                     {status === 'ok' && post && (
                         <PostForm
-                            initial={{ title: post.title, content: post.content, category: post.category, is_public: post.is_public, show_name: post.show_name }}
+                            initial={{ content: post.content, category: post.category, is_public: post.is_public, show_name: post.show_name }}
                             submitLabel="重新送審" busy={busy} error={error} onSubmit={handle} onCancel={goMine} />
                     )}
                 </PageShell>
@@ -1012,11 +1009,10 @@
             const cancelEdit = () => { setEditing(false); setError(''); };
             const saveEdit = async () => {
                 const content = draft.content.trim();
-                const title = makeTitle(content);
                 if (!content) { setError('內容不可空白'); return; }
                 if (content === post.content) { setEditing(false); return; }
                 setSaving(true); setError('');
-                try { await api.editContent(post.id, title, content); onPatch(post.id, { title, content }); setEditing(false); }
+                try { await api.editContent(post.id, content); onPatch(post.id, { content }); setEditing(false); }
                 catch (err) { setError(err.message || '儲存失敗，請稍後再試'); }
                 finally { setSaving(false); }
             };
@@ -1264,7 +1260,7 @@
                                         </div>
                                         <span className="text-xs text-zinc-400 font-mono tabular-nums shrink-0">{formatDateTime(n.created_at)}</span>
                                     </div>
-                                    <h3 className="text-base font-black text-zinc-900 leading-snug mb-2">{n.post_title}</h3>
+                                    {n.prayer_posts?.content && <p className="text-[15px] leading-6 text-zinc-700 line-clamp-2 whitespace-pre-line break-words mb-3">{n.prayer_posts.content}</p>}
                                     <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
                                         <p className="text-xs font-bold text-red-700 mb-1">退回原因（審查者：{n.actor_name}）</p>
                                         <p className="text-sm text-red-900 whitespace-pre-line">{n.reason || '—'}</p>
