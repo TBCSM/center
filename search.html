@@ -32,7 +32,7 @@
             "react": "https://esm.sh/react@18.2.0",
             "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
             "lucide-react": "https://esm.sh/lucide-react@0.344.0?external=react,react-dom",
-            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.109.0"
         }
     }
     </script>
@@ -57,7 +57,21 @@
         window.onerror = function(msg, url, line, col, error) {
             const root = document.getElementById('root');
             if(root) {
-                root.innerHTML = `<div style="color:red; background:#fee; padding:20px; margin:20px; border-radius:10px; font-family:sans-serif;"><h3>❌ 應用程式錯誤</h3><p><strong>錯誤訊息:</strong> ${msg}</p><p>請檢查程式碼 import 是否完整。</p></div>`;
+                // 用 textContent 顯示錯誤文字，不把錯誤訊息當成網頁程式碼解讀
+                root.textContent = '';
+                const box = document.createElement('div');
+                box.style.cssText = 'color:red; background:#fee; padding:20px; margin:20px; border-radius:10px; font-family:sans-serif;';
+                const title = document.createElement('h3');
+                title.textContent = '❌ 應用程式錯誤';
+                const detail = document.createElement('p');
+                const label = document.createElement('strong');
+                label.textContent = '錯誤訊息:';
+                detail.appendChild(label);
+                detail.appendChild(document.createTextNode(' ' + msg));
+                const hint = document.createElement('p');
+                hint.textContent = '請檢查程式碼 import 是否完整。';
+                box.append(title, detail, hint);
+                root.appendChild(box);
             }
             return false;
         };
@@ -86,7 +100,8 @@
             try {
                 const date = new Date();
                 date.setTime(date.getTime() + (30 * 24 * 60 * 60 * 1000)); 
-                document.cookie = `${key}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/`;
+                const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+                document.cookie = `${key}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/; SameSite=Lax${secureFlag}`;
             } catch (e) {}
         };
 

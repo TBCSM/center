@@ -41,7 +41,7 @@
             "react": "https://esm.sh/react@18.2.0",
             "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
             "lucide-react": "https://esm.sh/lucide-react@0.344.0?external=react,react-dom",
-            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.109.0"
         }
     }
     </script>
@@ -105,7 +105,8 @@
             try { localStorage.setItem('tbc_user', name); } catch (e) {}
             try {
                 const d = new Date(); d.setTime(d.getTime() + 30 * 24 * 60 * 60 * 1000);
-                document.cookie = `tbc_user=${encodeURIComponent(name)}; expires=${d.toUTCString()}; path=/`;
+                const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+                document.cookie = `tbc_user=${encodeURIComponent(name)}; expires=${d.toUTCString()}; path=/; SameSite=Lax${secureFlag}`;
             } catch (e) {}
         };
         const clearSharedUser = () => {

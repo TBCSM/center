@@ -1079,7 +1079,13 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
         });
 
         // 這裡改用安全的字串組合方式，避免轉譯器出錯
-        const headerRow = "\uFEFF日期,堂別," + dbData.positions.map(p => p.name).join(',') + "\n";
+        // 防止 Excel 把「=、+、-、@」開頭的文字當成公式執行；同時處理內容裡的雙引號
+        const safeCell = (v) => {
+            let s = String(v ?? '');
+            if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+            return '"' + s.replace(/"/g, '""') + '"';
+        };
+        const headerRow = "\uFEFF" + ['日期', '堂別', ...dbData.positions.map(p => p.name)].map(safeCell).join(',') + "\n";
         let csvContent = headerRow;
         
         sortedRows.forEach(row => {
@@ -1088,12 +1094,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                 r.push((row.positions[pos.name] || []).join('、'));
             });
             // 確保換行符號不會被斷開
-            const safeCell = (v) => {
-    let s = String(v ?? '');
-    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;       // 擋公式
-    return '"' + s.replace(/"/g, '""') + '"';      // 引號跳脫
-};
-csvContent += r.map(safeCell).join(',') + "\n";
+            csvContent += r.map(safeCell).join(',') + "\n";
         });
         
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
