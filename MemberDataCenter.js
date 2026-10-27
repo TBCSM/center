@@ -416,12 +416,13 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                 if (error) throw error; memberId = data[0].id;
             }
 
-            await supabase.from('member_quarter_settings').upsert({
-                member_id: memberId, quarter: viewQuarter, preferred_session: formData.preferred_session,
-                availability_status: formData.availability_status, dual_service_pref: finalDualPref,
-                newcomer_rule: parsedNewcomerRule, unavailable_dates: formData.unavailable_dates,
-                unavailable_weeks: formData.unavailable_weeks || []
-            }, { onConflict: 'member_id, quarter' });
+            const { error: qsError } = await supabase.from('member_quarter_settings').upsert({
+    member_id: memberId, quarter: viewQuarter, preferred_session: formData.preferred_session,
+    availability_status: formData.availability_status, dual_service_pref: finalDualPref,
+    newcomer_rule: parsedNewcomerRule, unavailable_dates: formData.unavailable_dates,
+    unavailable_weeks: formData.unavailable_weeks || []
+}, { onConflict: 'member_id, quarter' });
+if (qsError) throw qsError;
 
             if (isAdmin && memberId) {
                 await supabase.from('member_positions').delete().eq('member_id', memberId).eq('quarter', viewQuarter);
