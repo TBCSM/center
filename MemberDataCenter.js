@@ -409,29 +409,33 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
             const memberPayload = { name: formData.name.trim() };
             if (isAdmin) { memberPayload.group_id = finalGroupId; memberPayload.email = formData.email ? formData.email.trim() : null; }
 
-            if (memberId) await supabase.from('members').update(memberPayload).eq('id', memberId);
-            else {
+            if (memberId) {
+                const { error: memberErr } = await supabase.from('members').update(memberPayload).eq('id', memberId);
+                if (memberErr) throw memberErr;
+            } else {
                 if (!isAdmin) throw new Error("只有管理員可以新增同工");
                 const { data, error } = await supabase.from('members').insert(memberPayload).select();
                 if (error) throw error; memberId = data[0].id;
             }
 
             const { error: qsError } = await supabase.from('member_quarter_settings').upsert({
-    member_id: memberId, quarter: viewQuarter, preferred_session: formData.preferred_session,
-    availability_status: formData.availability_status, dual_service_pref: finalDualPref,
-    newcomer_rule: parsedNewcomerRule, unavailable_dates: formData.unavailable_dates,
-    unavailable_weeks: formData.unavailable_weeks || []
-}, { onConflict: 'member_id, quarter' });
-if (qsError) throw qsError;
+                member_id: memberId, quarter: viewQuarter, preferred_session: formData.preferred_session,
+                availability_status: formData.availability_status, dual_service_pref: finalDualPref,
+                newcomer_rule: parsedNewcomerRule, unavailable_dates: formData.unavailable_dates,
+                unavailable_weeks: formData.unavailable_weeks || []
+            }, { onConflict: 'member_id, quarter' });
+            if (qsError) throw qsError;
 
             if (isAdmin && memberId) {
-                await supabase.from('member_positions').delete().eq('member_id', memberId).eq('quarter', viewQuarter);
+                const { error: delPosErr } = await supabase.from('member_positions').delete().eq('member_id', memberId).eq('quarter', viewQuarter);
+                if (delPosErr) throw delPosErr;
                 const posKeys = Object.keys(formPositions);
                 if (posKeys.length > 0) {
-                    const insertPosPayload = posKeys.map(pid => ({ 
+                    const insertPosPayload = posKeys.map(pid => ({
                         member_id: memberId, position_id: pid, quarter: viewQuarter, is_active: formPositions[pid] === 'active'
                     }));
-                    await supabase.from('member_positions').insert(insertPosPayload);
+                    const { error: insPosErr } = await supabase.from('member_positions').insert(insertPosPayload);
+                    if (insPosErr) throw insPosErr;
                 }
             }
             showMessage('success', editingMember ? '更新成功！' : '新增成功！'); closeModal(); loadData();
