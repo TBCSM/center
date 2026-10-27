@@ -1088,7 +1088,12 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                 r.push((row.positions[pos.name] || []).join('、'));
             });
             // 確保換行符號不會被斷開
-            csvContent += r.map(v => `"${v}"`).join(',') + "\n";
+            const safeCell = (v) => {
+    let s = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;       // 擋公式
+    return '"' + s.replace(/"/g, '""') + '"';      // 引號跳脫
+};
+csvContent += r.map(safeCell).join(',') + "\n";
         });
         
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
