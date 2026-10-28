@@ -156,6 +156,7 @@
         const ChurchIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M10 9h4" /><path d="M12 7v5" /><path d="M14 22v-4a2 2 0 0 0-4 0v4" /><path d="M18 22V5.618a1 1 0 0 0-.553-.894l-4.553-2.277a2 2 0 0 0-1.788 0L6.553 4.724A1 1 0 0 0 6 5.618V22" /><path d="m18 7 3.447 1.724a1 1 0 0 1 .553.894V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.618a1 1 0 0 1 .553-.894L6 7" /></React.Fragment>} />;
         const UsersIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></React.Fragment>} />;
         const SmileIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /></React.Fragment>} />;
+        const TrashIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></React.Fragment>} />;
         const UndoIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></React.Fragment>} />;
         const XMarkIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M18 6 6 18" /><path d="m6 6 12 12" /></React.Fragment>} />;
         const ActivityIcon = (p) => <Icon {...p} d={<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />} />;
@@ -184,6 +185,7 @@
             resubmit: (id, v) => rpc('resubmit_prayer', { p_id: id, p_content: v.content, p_category: v.category, p_is_public: v.is_public, p_show_name: v.show_name }),
             approve: (id, isPublic) => rpc('approve_prayer', { p_id: id, p_is_public: isPublic }),
             returnPost: (id, reason) => rpc('return_prayer', { p_id: id, p_reason: reason }),
+            deletePost: (id) => rpc('delete_prayer', { p_id: id }),
             setVisibility: (id, isPublic) => rpc('set_prayer_visibility', { p_id: id, p_is_public: isPublic }),
             myPosts: async (uid) => {
                 const { data, error } = await supabase.from('prayer_posts').select('*').eq('author_uid', uid).order('created_at', { ascending: false });
@@ -845,7 +847,7 @@
         // ==========================================
         // 我的禱告：卡片格式同「審查貼文」
         // ==========================================
-        const MyPostCard = ({ post, reason, showStatus, goEdit, forceReason }) => {
+        const MyPostCard = ({ post, reason, showStatus, goEdit, forceReason, canSeeHistory }) => {
             const returned = post.review_status === 'returned';
             const name = post.show_name ? post.author_name : ANON_NAME;
             return (
@@ -870,7 +872,7 @@
                         </span>
                         {showStatus && <StatusBadge status={post.review_status} />}
                     </div>
-                    <HistoryToggle postId={post.id} />
+                    {canSeeHistory && <HistoryToggle postId={post.id} />}
                 </li>
             );
         };
@@ -878,7 +880,7 @@
         // ==========================================
         // 我的禱告
         // ==========================================
-        const MineView = ({ session, onLogin, goHome, goEdit, flash }) => {
+        const MineView = ({ session, role, onLogin, goHome, goEdit, flash }) => {
             const [tab, setTab] = useState('all');
             const [posts, setPosts] = useState([]);
             const [reasons, setReasons] = useState({});
@@ -915,7 +917,7 @@
                     {status === 'ok' && shown.length === 0 && <EmptyBox message={tab === 'all' ? '你還沒有貼文' : '這個分類目前沒有禱告'} />}
                     {status === 'ok' && shown.length > 0 && (
                         <ul className="flex flex-col gap-4">
-                            {shown.map(p => <MyPostCard key={p.id} post={p} reason={reasons[p.id]} showStatus={tab === 'all'} goEdit={goEdit} />)}
+                            {shown.map(p => <MyPostCard key={p.id} post={p} reason={reasons[p.id]} showStatus={tab === 'all'} goEdit={goEdit} canSeeHistory={REVIEWER_ROLES.includes(role)} />)}
                         </ul>
                     )}
                 </PageShell>
@@ -988,6 +990,13 @@
             const [editing, setEditing] = useState(false);
             const [saving, setSaving] = useState(false);
             const [draft, setDraft] = useState({ content: post.content });
+            const [confirmDel, setConfirmDel] = useState(false);
+            const [deleting, setDeleting] = useState(false);
+            const doDelete = async () => {
+                setDeleting(true); setError('');
+                try { await api.deletePost(post.id); onRemove(post.id); onChanged(); }
+                catch (err) { setError(err.message || '刪除失敗，請稍後再試'); setDeleting(false); }
+            };
 
             // 核准或退回：成功後這張卡片立刻從「待審查」消失，再到背景更新清單
             const run = async (fn) => {
@@ -1073,6 +1082,19 @@
                     <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(post.created_at)}
                 </span>
             );
+            const trashBtn = (
+                <button type="button" onClick={() => setConfirmDel(true)} disabled={saving || deleting} aria-label="刪除貼文" title="刪除貼文"
+                    className={`${btnGhost} !px-2 hover:!text-red-600`}><TrashIcon size={16} /></button>
+            );
+            const deleteBlock = confirmDel && (
+                <div className="mt-4 bg-red-50 border border-red-100 rounded-lg p-3 flex flex-col gap-3" role="alertdialog" aria-label="確認刪除貼文">
+                    <p className="text-sm text-red-900">確定要刪除這則貼文嗎？刪除後無法復原，這則貼文的禱告次數、審查紀錄與通知也會一併刪除。</p>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button type="button" onClick={() => { setConfirmDel(false); setError(''); }} disabled={deleting} className={btnCancelWhite}>取消</button>
+                        <button type="button" onClick={doDelete} disabled={deleting} className={btnReturnSoft}>{deleting ? '刪除中…' : '刪除'}</button>
+                    </div>
+                </div>
+            );
             const headerRow = (actions) => (
                 <div className="flex items-center justify-between gap-3 mb-2.5">
                     <div className="flex items-center gap-3 min-w-0">
@@ -1087,7 +1109,7 @@
             if (post.review_status === 'returned') {
                 return (
                     <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
-                        {headerRow(null)}
+                        {headerRow(<div className="flex items-center gap-1 shrink-0">{trashBtn}</div>)}
                         <ClampText text={post.content} />
                         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
                             <div className="flex items-center gap-1.5" aria-label="禱告回應次數 0">
@@ -1096,6 +1118,8 @@
                             </div>
                             {timeSpan}
                         </div>
+                        {deleteBlock}
+                        <div className="mt-2"><InlineError message={error} /></div>
                     </li>
                 );
             }
@@ -1107,6 +1131,7 @@
                     <button type="button" onClick={editing ? saveEdit : startEdit} disabled={saving} aria-expanded={editing} className={ghostBtn}>
                         {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中…' : '儲存') : '編輯'}
                     </button>
+                    {trashBtn}
                 </div>
             );
             const decideBlock = !pending ? null : returning ? (
@@ -1158,6 +1183,7 @@
                         </div>
                     )}
                     {decideBlock}
+                    {deleteBlock}
                     <div className="mt-2"><InlineError message={error} /></div>
                 </li>
             );
@@ -1179,9 +1205,9 @@
             const onRemove = (id) => setPosts(list => list.filter(p => p.id !== id));
 
             if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><NeedLogin onLogin={onLogin} /></PageShell>;
-            if (!REVIEWER_ROLES.includes(role)) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><EmptyBox message="只有牧師與區長可以進入審查頁" /></PageShell>;
+            if (!REVIEWER_ROLES.includes(role)) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><EmptyBox message="只有牧師、區長與管理員可以進入審查頁" /></PageShell>;
 
-            const tabs = [{ id: 'pending', label: '待審查' }, { id: 'approved', label: '已核准' }, { id: 'returned', label: '已退回' }];
+            const tabs = [{ id: 'pending', label: '待審查' }, { id: 'returned', label: '已退回' }, { id: 'approved', label: '編輯' }];
             const onChanged = async () => { await load(true); refreshPending(); };
 
             return (
@@ -1203,7 +1229,7 @@
         // ==========================================
         // 通知頁（站內通知：貼文被退回時，提報者會收到）
         // ==========================================
-        const NotificationsView = ({ session, onLogin, goHome, goEdit, refreshUnread }) => {
+        const NotificationsView = ({ session, role, onLogin, goHome, goEdit, refreshUnread }) => {
             const [items, setItems] = useState([]);   // 每筆：{ notice: 通知, post: 對應的貼文 }
             const [status, setStatus] = useState('loading');
 
@@ -1235,7 +1261,7 @@
                     {status === 'ok' && items.length > 0 && (
                         <ul className="flex flex-col gap-4">
                             {items.map(({ notice, post }) => (
-                                <MyPostCard key={notice.id} post={post} reason={{ reason: notice.reason }} forceReason showStatus={false} goEdit={goEdit} />
+                                <MyPostCard key={notice.id} post={post} reason={{ reason: notice.reason }} forceReason showStatus={false} goEdit={goEdit} canSeeHistory={REVIEWER_ROLES.includes(role)} />
                             ))}
                         </ul>
                     )}
@@ -1366,9 +1392,9 @@
             if (!sessionReady && ['submit', 'mine', 'edit', 'review', 'notifications'].includes(route.name)) body = <PageShell><Skeletons /></PageShell>;
             else if (route.name === 'search') body = <SearchView goHome={goHome} />;
             else if (route.name === 'submit') body = <SubmitView session={session} onLogin={() => setShowLogin(true)} goMine={goMine} goHome={goHome} notify={notify} />;
-            else if (route.name === 'mine') body = <MineView session={session} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} flash={flash} />;
+            else if (route.name === 'mine') body = <MineView session={session} role={role} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} flash={flash} />;
             else if (route.name === 'edit') body = <EditView key={route.id} id={route.id} session={session} onLogin={() => setShowLogin(true)} goMine={goMine} notify={notify} />;
-            else if (route.name === 'notifications') body = <NotificationsView session={session} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} refreshUnread={refreshUnread} />;
+            else if (route.name === 'notifications') body = <NotificationsView session={session} role={role} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} refreshUnread={refreshUnread} />;
             else if (route.name === 'review') body = <ReviewView session={session} role={role} onLogin={() => setShowLogin(true)} goHome={goHome} refreshPending={refreshPending} />;
             else body = <HomeView goSubmit={() => requireLogin('#/submit')} />;
 
