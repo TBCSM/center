@@ -17,7 +17,7 @@
         "imports": {
             "react": "https://esm.sh/react@18.2.0",
             "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.109.0"
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
         }
     }
     </script>
@@ -209,7 +209,13 @@
                 return map;
             },
             notifications: async () => {
-                const { data, error } = await supabase.from('prayer_notifications').select('*, prayer_posts(content)').order('created_at', { ascending: false }).limit(100);
+                const { data, error } = await supabase.from('prayer_notifications').select('*').order('created_at', { ascending: false }).limit(100);
+                if (error) fail(error);
+                return data || [];
+            },
+            postsByIds: async (ids) => {
+                if (!ids.length) return [];
+                const { data, error } = await supabase.from('prayer_posts').select('*').in('id', ids);
                 if (error) fail(error);
                 return data || [];
             },
@@ -442,7 +448,7 @@
                         className={`-ml-2.5 p-2.5 rounded-full transition-colors duration-150 ${focusRing} ${popping ? 'animate-pop' : ''} ${local.responded ? 'text-red-500 cursor-default' : 'text-zinc-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100'}`}>
                         <PrayIcon filled={local.responded} />
                     </button>
-                    <span className={`text-sm font-mono tabular-nums font-bold ${local.responded ? 'text-red-500' : 'text-zinc-500'}`}>{local.count}</span>
+                    <span className={`text-sm font-mono tabular-nums font-bold ${local.responded ? 'text-zinc-900' : 'text-zinc-500'}`}>{local.count}</span>
                 </div>
             );
         };
@@ -839,7 +845,7 @@
         // ==========================================
         // 我的禱告：卡片格式同「審查貼文」
         // ==========================================
-        const MyPostCard = ({ post, reason, showStatus, goEdit }) => {
+        const MyPostCard = ({ post, reason, showStatus, goEdit, forceReason }) => {
             const returned = post.review_status === 'returned';
             const name = post.show_name ? post.author_name : ANON_NAME;
             return (
@@ -852,7 +858,7 @@
                         {returned && <button type="button" onClick={() => goEdit(post.id)} className={`${btnGhost} shrink-0`}><PencilIcon size={16} />編輯重新送審</button>}
                     </div>
                     <ClampText text={post.content} />
-                    {returned && (
+                    {(returned || forceReason) && (
                         <div className="bg-red-50 border border-red-100 rounded-lg p-3 mt-3">
                             <p className="text-xs font-bold text-red-700 mb-1">退回原因</p>
                             <p className="text-sm text-red-900 whitespace-pre-line">{reason?.reason || '—'}</p>
@@ -1198,79 +1204,38 @@
         // 通知頁（站內通知：貼文被退回時，提報者會收到）
         // ==========================================
         const NotificationsView = ({ session, onLogin, goHome, goEdit, refreshUnread }) => {
-            const [items, setItems] = useState([]);
+            const [items, setItems] = useState([]);   // 每筆：{ notice: 通知, post: 對應的貼文 }
             const [status, setStatus] = useState('loading');
-            const [busy, setBusy] = useState(false);
-            const [error, setError] = useState('');
 
             const load = useCallback(async () => {
                 if (!session) return;
                 setStatus('loading');
-                try { setItems(await api.notifications()); setStatus('ok'); }
-                catch (err) { console.error('讀取通知失敗:', err); setStatus('error'); }
+                try {
+                    const notices = await api.notifications();
+                    const posts = await api.postsByIds([...new Set(notices.map(n => n.post_id))]);
+                    const byId = {};
+                    posts.forEach(p => { byId[p.id] = p; });
+                    setItems(notices.filter(n => byId[n.post_id]).map(n => ({ notice: n, post: byId[n.post_id] })));
+                    setStatus('ok');
+                    // 進到通知頁就視為全部已讀
+                    api.markAllRead().then(refreshUnread).catch(() => {});
+                } catch (err) { console.error('讀取通知失敗:', err); setStatus('error'); }
             }, [session?.user?.id]);
             useEffect(() => { load(); }, [load]);
 
             if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><NeedLogin onLogin={onLogin} /></PageShell>;
 
-            const unread = items.filter(n => !n.is_read).length;
-
-            const open = async (n) => {
-                if (!n.is_read) {
-                    try { await api.markRead(n.id); refreshUnread(); } catch (err) { console.error(err); }
-                }
-                goEdit(n.post_id);
-            };
-            const markOne = async (n) => {
-                setError('');
-                try {
-                    await api.markRead(n.id);
-                    setItems(list => list.map(x => x.id === n.id ? { ...x, is_read: true } : x));
-                    refreshUnread();
-                } catch (err) { setError(err.message || '操作失敗，請稍後再試'); }
-            };
-            const markAll = async () => {
-                setBusy(true); setError('');
-                try {
-                    await api.markAllRead();
-                    setItems(list => list.map(x => ({ ...x, is_read: true })));
-                    refreshUnread();
-                } catch (err) { setError(err.message || '操作失敗，請稍後再試'); }
-                finally { setBusy(false); }
-            };
-
             return (
                 <PageShell>
-                    <div className="flex items-end justify-between gap-4 mb-6">
-                        <h2 className="text-2xl font-black text-zinc-900 tracking-tight">通知</h2>
-                        <button onClick={markAll} disabled={busy || unread === 0} className={btnOutline}>全部標為已讀</button>
-                    </div>
-                    <div className="mb-4"><InlineError message={error} /></div>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">通知</h2>
 
                     {status === 'loading' && <Skeletons />}
                     {status === 'error' && <ErrorBox message="暫時無法載入通知，請稍後再試" onRetry={load} />}
                     {status === 'ok' && items.length === 0 && <EmptyBox message="目前沒有通知" />}
                     {status === 'ok' && items.length > 0 && (
-                        <ul className="flex flex-col gap-3">
-                            {items.map(n => (
-                                <li key={n.id} className={`rounded-xl border p-5 shadow-sm ${n.is_read ? 'bg-white border-zinc-200' : 'bg-white border-zinc-900'}`}>
-                                    <div className="flex items-start justify-between gap-3 mb-2">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            {!n.is_read && <span className="w-2 h-2 rounded-full bg-red-600 shrink-0" aria-label="未讀"></span>}
-                                            <span className="text-xs font-bold text-red-700">你的貼文被退回</span>
-                                        </div>
-                                        <span className="text-xs text-zinc-400 font-mono tabular-nums shrink-0">{formatDateTime(n.created_at)}</span>
-                                    </div>
-                                    {n.prayer_posts?.content && <p className="text-[15px] leading-6 text-zinc-700 line-clamp-2 whitespace-pre-line break-words mb-3">{n.prayer_posts.content}</p>}
-                                    <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
-                                        <p className="text-xs font-bold text-red-700 mb-1">退回原因</p>
-                                        <p className="text-sm text-red-900 whitespace-pre-line">{n.reason || '—'}</p>
-                                    </div>
-                                    <div className="flex justify-end gap-2">
-                                        {!n.is_read && <button onClick={() => markOne(n)} className={btnOutline}>標為已讀</button>}
-                                        <button onClick={() => open(n)} className={btnGhost}><PencilIcon size={16} />編輯重新送審</button>
-                                    </div>
-                                </li>
+                        <ul className="flex flex-col gap-4">
+                            {items.map(({ notice, post }) => (
+                                <MyPostCard key={notice.id} post={post} reason={{ reason: notice.reason }} forceReason showStatus={false} goEdit={goEdit} />
                             ))}
                         </ul>
                     )}
@@ -1429,7 +1394,7 @@
                                 <div className="justify-self-end flex items-center">
                                     <button onClick={() => requireLogin('#/submit')} aria-label="新增貼文" title="新增貼文" className={iconBtn}><SquarePlusIcon size={24} /></button>
                                     <button onClick={() => go('#/search')} aria-label="搜尋" title="搜尋" className={iconBtn}><SearchIcon size={24} /></button>
-                                    <button onClick={() => requireLogin('#/notifications')} aria-label={unread > 0 ? `通知，${unread} 則未讀` : '通知'} title="通知" className={`${iconBtn} ${route.name === 'notifications' ? 'bg-zinc-100' : ''}`}>
+                                    <button onClick={() => { setUnread(0); if (session) api.markAllRead().catch(() => {}); requireLogin('#/notifications'); }} aria-label={unread > 0 ? `通知，${unread} 則未讀` : '通知'} title="通知" className={`${iconBtn} ${route.name === 'notifications' ? 'bg-zinc-100' : ''}`}>
                                         <BellIcon size={24} />
                                         {session && unread > 0 && <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-xs font-bold tabular-nums">{unread > 99 ? '99+' : unread}</span>}
                                     </button>
