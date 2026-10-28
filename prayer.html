@@ -222,12 +222,14 @@
                 return data || [];
             },
             // 審查者搜尋：所有狀態的貼文，比對內容或貼文者姓名（資料庫規則只允許審查角色讀取全部）
-            searchAllPosts: async (keyword) => {
+            searchAllPosts: async (keyword, from, to) => {
                 const kw = keyword.replace(/[%*_,()"\\]/g, ' ').trim().slice(0, 100);
-                if (!kw) return [];
-                const { data, error } = await supabase.from('prayer_posts').select('*')
-                    .or(`content.ilike.*${kw}*,author_name.ilike.*${kw}*`)
-                    .order('created_at', { ascending: false }).limit(50);
+                if (!kw && !from && !to) return [];
+                let q = supabase.from('prayer_posts').select('*');
+                if (kw) q = q.or(`content.ilike.*${kw}*,author_name.ilike.*${kw}*`);
+                if (from) q = q.gte('created_at', new Date(`${from}T00:00:00`).toISOString());
+                if (to) q = q.lte('created_at', new Date(`${to}T23:59:59.999`).toISOString());
+                const { data, error } = await q.order('created_at', { ascending: false }).limit(50);
                 if (error) fail(error);
                 return data || [];
             },
@@ -1238,8 +1240,11 @@
             const [query, setQuery] = useState('');
             const [results, setResults] = useState([]);
             const [sStatus, setSStatus] = useState('idle');
+            const [dateFrom, setDateFrom] = useState('');
+            const [dateTo, setDateTo] = useState('');
             const keyword = query.trim();
-            const searching = keyword !== '';
+            const rangeBad = dateFrom !== '' && dateTo !== '' && dateFrom > dateTo;
+            const searching = keyword !== '' || dateFrom !== '' || dateTo !== '';
             const reqId = useRef(0);
 
             // silent = true：背景更新，不顯示載入中的骨架畫面（避免畫面晃動）
@@ -1250,18 +1255,18 @@
             }, [tab]);
             useEffect(() => { if (session && REVIEWER_ROLES.includes(role)) load(); }, [load, session, role]);
 
-            const runSearch = useCallback(async (kw, silent) => {
+            const runSearch = useCallback(async (kw, from, to, silent) => {
                 const mine = ++reqId.current;
                 if (silent !== true) setSStatus('loading');
-                try { const r = await api.searchAllPosts(kw); if (reqId.current === mine) { setResults(r); setSStatus('ok'); } }
+                try { const r = await api.searchAllPosts(kw, from, to); if (reqId.current === mine) { setResults(r); setSStatus('ok'); } }
                 catch (err) { console.error('搜尋失敗:', err); if (reqId.current === mine && silent !== true) setSStatus('error'); }
             }, []);
             useEffect(() => {
                 if (!session || !REVIEWER_ROLES.includes(role)) return;
-                if (!keyword) { reqId.current++; setSStatus('idle'); setResults([]); return; }
-                const t = setTimeout(() => runSearch(keyword), 350);
+                if (!searching || rangeBad) { reqId.current++; setSStatus('idle'); setResults([]); return; }
+                const t = setTimeout(() => runSearch(keyword, dateFrom, dateTo), 350);
                 return () => clearTimeout(t);
-            }, [keyword, session, role, runSearch]);
+            }, [keyword, dateFrom, dateTo, searching, rangeBad, session, role, runSearch]);
 
             const onPatch = (id, patch) => { setPosts(l => l.map(p => p.id === id ? { ...p, ...patch } : p)); setResults(l => l.map(p => p.id === id ? { ...p, ...patch } : p)); };
             // 核准／退回：一般清單中卡片消失；搜尋時貼文還在，所以改成重新搜尋更新狀態
@@ -1272,7 +1277,7 @@
             if (!REVIEWER_ROLES.includes(role)) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><EmptyBox message="只有牧師、區長與管理員可以進入審查頁" /></PageShell>;
 
             const tabs = [{ id: 'pending', label: '待審查' }, { id: 'returned', label: '已退回' }, { id: 'approved', label: '編輯' }];
-            const onChanged = async () => { if (searching) await runSearch(keyword, true); else await load(true); refreshPending(); };
+            const onChanged = async () => { if (searching) await runSearch(keyword, dateFrom, dateTo, true); else await load(true); refreshPending(); };
 
             return (
                 <PageShell>
@@ -1282,21 +1287,30 @@
                         <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} enterKeyHint="search" placeholder="搜尋內容或貼文者" aria-label="搜尋貼文"
                             className="w-full bg-zinc-100 rounded-full pl-11 pr-11 py-3 text-zinc-900 font-medium placeholder:text-zinc-400 hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150" />
                         {searching && (
-                            <button type="button" onClick={() => setQuery('')} aria-label="清除搜尋"
+                            <button type="button" onClick={() => { setQuery(''); setDateFrom(''); setDateTo(''); }} aria-label="清除搜尋"
                                 className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-full text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200 active:bg-zinc-300 transition-colors duration-150 ${focusRing}`}><XIcon size={18} /></button>
                         )}
                     </div>
+                    <div className="flex items-center gap-2 -mt-2 mb-5" role="group" aria-label="日期區間">
+                        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} max={dateTo || undefined} aria-label="開始日期"
+                            className="min-w-0 flex-1 bg-zinc-100 rounded-xl px-3 py-2.5 text-sm text-zinc-900 font-medium hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150" />
+                        <span className="text-zinc-400 text-sm shrink-0" aria-hidden="true">～</span>
+                        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} min={dateFrom || undefined} aria-label="結束日期"
+                            className="min-w-0 flex-1 bg-zinc-100 rounded-xl px-3 py-2.5 text-sm text-zinc-900 font-medium hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150" />
+                    </div>
+                    {rangeBad && <div className="mb-4"><InlineError message="開始日期不可晚於結束日期" /></div>}
 
                     {searching ? (
                         <>
                             {sStatus === 'loading' && <Skeletons />}
-                            {sStatus === 'error' && <ErrorBox message="暫時無法搜尋，稍後再試" onRetry={() => runSearch(keyword)} />}
-                            {sStatus === 'ok' && results.length === 0 && <EmptyBox message="找不到，換個關鍵字試試" />}
+                            {sStatus === 'error' && <ErrorBox message="暫時無法搜尋，稍後再試" onRetry={() => runSearch(keyword, dateFrom, dateTo)} />}
+                            {sStatus === 'ok' && results.length === 0 && <EmptyBox message="找不到，換個條件試試" />}
                             {sStatus === 'ok' && results.length > 0 && (
                                 <ul className="flex flex-col gap-4">
                                     {results.map(p => <ReviewCard key={p.id} post={p} onChanged={onChanged} onPatch={onPatch} onRemove={onRemove} onDeleted={onDeleted} />)}
                                 </ul>
                             )}
+                            {sStatus === 'ok' && results.length >= 50 && <p className="text-center text-sm text-zinc-400 mt-6">只顯示最新 50 則，請縮小條件</p>}
                         </>
                     ) : (
                         <>
