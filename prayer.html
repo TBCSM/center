@@ -157,6 +157,12 @@
         const UsersIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></React.Fragment>} />;
         const SmileIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /></React.Fragment>} />;
         const TrashIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></React.Fragment>} />;
+        const CrossIcon = (p) => <Icon {...p} d={<path d="M4 9a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h4a1 1 0 0 1 1 1v4a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-4a1 1 0 0 1 1-1h4a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-4a1 1 0 0 1-1-1V4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4a1 1 0 0 1-1 1z" />} />;
+        const HandHeartIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M11 14h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 16" /><path d="m7 20 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" /><path d="m2 15 6 6" /><path d="M19.5 8.5c.7-.7 1.5-1.6 1.5-2.7A2.73 2.73 0 0 0 16 4a2.78 2.78 0 0 0-5 1.8c0 1.2.8 2 1.5 2.8L16 12Z" /></React.Fragment>} />;
+        const UsersRoundIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M18 21a8 8 0 0 0-16 0" /><circle cx="10" cy="8" r="5" /><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3" /></React.Fragment>} />;
+        const CircleHelpIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></React.Fragment>} />;
+        const CircleCheckIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></React.Fragment>} />;
+        const CircleXIcon = (p) => <Icon {...p} d={<React.Fragment><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></React.Fragment>} />;
         const UndoIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></React.Fragment>} />;
         const XMarkIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M18 6 6 18" /><path d="m6 6 12 12" /></React.Fragment>} />;
         const ActivityIcon = (p) => <Icon {...p} d={<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />} />;
@@ -211,7 +217,7 @@
                 return map;
             },
             notifications: async () => {
-                const { data, error } = await supabase.from('prayer_notifications').select('*').order('created_at', { ascending: false }).limit(100);
+                const { data, error } = await supabase.from('prayer_notifications').select('*').eq('is_read', false).order('created_at', { ascending: false }).limit(100);
                 if (error) fail(error);
                 return data || [];
             },
@@ -255,7 +261,7 @@
             <span className="inline-flex items-center gap-1.5 text-sm shrink-0"><TagIcon size={18} /><span className="sr-only">分類：</span>{categoryLabel(id)}</span>
         );
         // 貼文頭像：用「分類」的圖示（像 Threads 的大頭貼）
-        const CATEGORY_ICON = { kingdom: EarthIcon, outreach: SendIcon, church: ChurchIcon, fellowship: UsersIcon, personal: UserIcon, thanks: SmileIcon };
+        const CATEGORY_ICON = { kingdom: EarthIcon, outreach: HandHeartIcon, church: CrossIcon, fellowship: UsersRoundIcon, personal: UserIcon, thanks: SmileIcon };
         const CategoryAvatar = ({ id }) => {
             const I = CATEGORY_ICON[id] || UserIcon;
             return (
@@ -263,6 +269,14 @@
                     <I size={20} />
                 </span>
             );
+        };
+        // 圖示＋文字（文字顏色沿用原本各狀態的設定）
+        const STATUS_ICON = { pending: CircleHelpIcon, approved: CircleCheckIcon, returned: CircleXIcon };
+        const STATUS_TEXT = { pending: 'text-amber-700', approved: 'text-emerald-700', returned: 'text-red-700' };
+        const StatusLabel = ({ status }) => {
+            const I = STATUS_ICON[status];
+            if (!I) return null;
+            return <span className={`inline-flex items-center gap-1.5 text-sm shrink-0 ${STATUS_TEXT[status]}`}><I size={18} />{STATUS[status].label}</span>;
         };
         const StatusBadge = ({ status }) => (
             <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-md border ${STATUS[status]?.cls || ''}`}>{STATUS[status]?.label || status}</span>
@@ -899,10 +913,10 @@
                         </div>
                     )}
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
+                        {showStatus && <StatusLabel status={post.review_status} />}
                         <span className="inline-flex items-center gap-1.5 text-sm tabular-nums shrink-0">
                             <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(post.created_at)}
                         </span>
-                        {showStatus && <StatusBadge status={post.review_status} />}
                     </div>
                     {canSeeHistory && <HistoryToggle postId={post.id} />}
                 </li>
@@ -1265,7 +1279,7 @@
                     <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-4">審查貼文</h2>
                     <div role="search" className="relative mb-5">
                         <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><SearchIcon size={20} /></span>
-                        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} enterKeyHint="search" placeholder="搜尋貼文內容或貼文者" aria-label="搜尋貼文"
+                        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} enterKeyHint="search" placeholder="搜尋貼文內容或貼文者" aria-label="搜尋貼文"
                             className="w-full bg-zinc-100 rounded-full pl-11 pr-11 py-3 text-zinc-900 font-medium placeholder:text-zinc-400 hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150" />
                         {searching && (
                             <button type="button" onClick={() => setQuery('')} aria-label="清除搜尋"
@@ -1495,7 +1509,7 @@
                                 <div className="justify-self-end flex items-center">
                                     <button onClick={() => requireLogin('#/submit')} aria-label="新增貼文" title="新增貼文" className={iconBtn}><SquarePlusIcon size={24} /></button>
                                     <button onClick={() => go('#/search')} aria-label="搜尋" title="搜尋" className={iconBtn}><SearchIcon size={24} /></button>
-                                    <button onClick={() => { setUnread(0); if (session) api.markAllRead().catch(() => {}); requireLogin('#/notifications'); }} aria-label={unread > 0 ? `通知，${unread} 則未讀` : '通知'} title="通知" className={`${iconBtn} ${route.name === 'notifications' ? 'bg-zinc-100' : ''}`}>
+                                    <button onClick={() => { setUnread(0); requireLogin('#/notifications'); }} aria-label={unread > 0 ? `通知，${unread} 則未讀` : '通知'} title="通知" className={`${iconBtn} ${route.name === 'notifications' ? 'bg-zinc-100' : ''}`}>
                                         <BellIcon size={24} />
                                         {session && unread > 0 && <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-xs font-bold tabular-nums">{unread > 99 ? '99+' : unread}</span>}
                                     </button>
