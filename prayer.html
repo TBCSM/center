@@ -215,6 +215,16 @@
                 if (error) fail(error);
                 return data || [];
             },
+            // 審查者搜尋：所有狀態的貼文，比對內容或貼文者姓名（資料庫規則只允許審查角色讀取全部）
+            searchAllPosts: async (keyword) => {
+                const kw = keyword.replace(/[%*_,()"\\]/g, ' ').trim().slice(0, 100);
+                if (!kw) return [];
+                const { data, error } = await supabase.from('prayer_posts').select('*')
+                    .or(`content.ilike.*${kw}*,author_name.ilike.*${kw}*`)
+                    .order('created_at', { ascending: false }).limit(50);
+                if (error) fail(error);
+                return data || [];
+            },
             postsByIds: async (ids) => {
                 if (!ids.length) return [];
                 const { data, error } = await supabase.from('prayer_posts').select('*').in('id', ids);
@@ -528,60 +538,18 @@
             );
         };
 
-        // canManage：牧師、區長、管理員在搜尋結果可以直接「編輯內容」或「刪除」貼文
-        const PostCard = ({ p, onResponded, canManage, onEdited, onDeleted }) => {
+        const PostCard = ({ p, onResponded }) => {
             const [error, setError] = useState('');
-            const [editing, setEditing] = useState(false);
-            const [draft, setDraft] = useState('');
-            const [saving, setSaving] = useState(false);
-            const [confirmDel, setConfirmDel] = useState(false);
-            const [deleting, setDeleting] = useState(false);
             const text = p.content ?? p.summary ?? '';
             const name = !p.display_name || p.display_name === '匿名' ? ANON_NAME : p.display_name;
-
-            const startEdit = () => { setDraft(text); setError(''); setEditing(true); };
-            const saveEdit = async () => {
-                const content = draft.trim();
-                if (!content) { setError('內容不可空白'); return; }
-                if (content === text) { setEditing(false); return; }
-                setSaving(true); setError('');
-                try { await api.editContent(p.id, content); onEdited(p.id, content); setEditing(false); }
-                catch (err) { setError(err.message || '儲存失敗，請稍後再試'); }
-                finally { setSaving(false); }
-            };
-            const doDelete = async () => {
-                setDeleting(true); setError('');
-                try { await api.deletePost(p.id); onDeleted(p.id); }
-                catch (err) { setError(err.message || '刪除失敗，請稍後再試'); setDeleting(false); }
-            };
-
             return (
                 <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
-                    <div className="flex items-center justify-between gap-3 mb-2.5">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <CategoryAvatar id={p.category} />
-                            <span className="text-[15px] font-bold text-zinc-900 truncate min-w-0">{name}</span>
-                        </div>
-                        {canManage && (
-                            <div className="flex items-center gap-1 shrink-0">
-                                {editing && <button type="button" onClick={() => { setEditing(false); setError(''); }} disabled={saving} className={btnGhost}><XMarkIcon size={16} />取消</button>}
-                                <button type="button" onClick={editing ? saveEdit : startEdit} disabled={saving} aria-expanded={editing} className={btnGhost}>
-                                    {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中…' : '儲存') : '編輯'}
-                                </button>
-                                <button type="button" onClick={() => { setError(''); setConfirmDel(true); }} disabled={saving} aria-label="刪除貼文" title="刪除貼文"
-                                    className={`${btnGhost} !px-2 hover:!text-red-600`}><TrashIcon size={16} /></button>
-                            </div>
-                        )}
+                    <div className="flex items-center gap-3 mb-2.5">
+                        <CategoryAvatar id={p.category} />
+                        <span className="text-[15px] font-bold text-zinc-900 truncate min-w-0">{name}</span>
                     </div>
 
-                    {editing ? (
-                        <label className="flex flex-col gap-1.5">
-                            <span className="flex justify-between text-xs font-bold text-zinc-500">內容 <span className="font-mono tabular-nums text-zinc-400">{draft.length}/800</span></span>
-                            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={800} rows={6} className={`${inputCls} leading-relaxed resize-y`} />
-                        </label>
-                    ) : (
-                        <ClampText text={text} />
-                    )}
+                    <ClampText text={text} />
 
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
                         <PrayButton postId={p.id} count={Number(p.response_count) || 0} responded={!!p.has_responded} onResponded={onResponded} onError={setError} />
@@ -589,8 +557,7 @@
                             <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(p.created_at)}
                         </span>
                     </div>
-                    {error && !confirmDel && <div className="mt-2"><InlineError message={error} /></div>}
-                    {confirmDel && <ConfirmModal title="刪除貼文？" confirmLabel="刪除" busy={deleting} error={error} onCancel={() => { setConfirmDel(false); setError(''); }} onConfirm={doDelete} />}
+                    {error && <div className="mt-2"><InlineError message={error} /></div>}
                 </li>
             );
         };
@@ -652,7 +619,7 @@
 
         const chipCls = (active) => `px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors duration-150 active:scale-[0.98] ${focusRing} ${active ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`;
 
-        const SearchView = ({ goHome, canManage }) => {
+        const SearchView = ({ goHome }) => {
             const [draft, setDraft] = useState('');
             const [category, setCategory] = useState('all');
             const [showFilter, setShowFilter] = useState(false);
@@ -691,8 +658,6 @@
             const removeRecent = (kw) => { const next = recent.filter(x => x !== kw); setRecent(next); saveRecent(next); if (next.length === 0) setEditing(false); };
             const clearRecent = () => { setRecent([]); saveRecent([]); setEditing(false); };
             const patch = (id, n) => setResults(list => list.map(x => x.id === id ? { ...x, response_count: n, has_responded: true } : x));
-            const onEdited = (id, content) => setResults(list => list.map(x => x.id === id ? { ...x, content } : x));
-            const onDeleted = (id) => setResults(list => list.filter(x => x.id !== id));
 
             return (
                 <main className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-3 pb-20 animate-fade-in">
@@ -755,7 +720,7 @@
                             {status === 'ok' && results.length === 0 && <EmptyBox message="找不到，換個關鍵字試試" />}
                             {status === 'ok' && results.length > 0 && (
                                 <ul className="flex flex-col gap-3">
-                                    {results.map(p => <PostCard key={p.id} p={p} onResponded={(n) => patch(p.id, n)} canManage={canManage} onEdited={onEdited} onDeleted={onDeleted} />)}
+                                    {results.map(p => <PostCard key={p.id} p={p} onResponded={(n) => patch(p.id, n)} />)}
                                 </ul>
                             )}
                         </section>
@@ -1048,7 +1013,7 @@
         // ==========================================
         const pillCls = (active) => `px-4 py-2 rounded-lg text-sm font-bold border transition-colors duration-150 active:scale-[0.98] ${focusRing} ${active ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'}`;
 
-        const ReviewCard = ({ post, onChanged, onPatch, onRemove }) => {
+        const ReviewCard = ({ post, onChanged, onPatch, onRemove, onDeleted }) => {
             const [isPublic, setIsPublic] = useState(post.is_public);   // 待審查：核准時才套用
             const [returning, setReturning] = useState(false);
             const [reason, setReason] = useState('');
@@ -1061,7 +1026,7 @@
             const [deleting, setDeleting] = useState(false);
             const doDelete = async () => {
                 setDeleting(true); setError('');
-                try { await api.deletePost(post.id); onRemove(post.id); onChanged(); }
+                try { await api.deletePost(post.id); (onDeleted || onRemove)(post.id); onChanged(); }
                 catch (err) { setError(err.message || '刪除失敗，請稍後再試'); setDeleting(false); }
             };
 
@@ -1255,6 +1220,13 @@
             const [tab, setTab] = useState('pending');
             const [posts, setPosts] = useState([]);
             const [status, setStatus] = useState('loading');
+            // 搜尋：輸入關鍵字後，改顯示所有狀態中符合的貼文
+            const [query, setQuery] = useState('');
+            const [results, setResults] = useState([]);
+            const [sStatus, setSStatus] = useState('idle');
+            const keyword = query.trim();
+            const searching = keyword !== '';
+            const reqId = useRef(0);
 
             // silent = true：背景更新，不顯示載入中的骨架畫面（避免畫面晃動）
             const load = useCallback(async (silent) => {
@@ -1263,26 +1235,67 @@
                 catch (err) { console.error('讀取審查清單失敗:', err); if (silent !== true) setStatus('error'); }
             }, [tab]);
             useEffect(() => { if (session && REVIEWER_ROLES.includes(role)) load(); }, [load, session, role]);
-            const onPatch = (id, patch) => setPosts(list => list.map(p => p.id === id ? { ...p, ...patch } : p));
-            const onRemove = (id) => setPosts(list => list.filter(p => p.id !== id));
+
+            const runSearch = useCallback(async (kw, silent) => {
+                const mine = ++reqId.current;
+                if (silent !== true) setSStatus('loading');
+                try { const r = await api.searchAllPosts(kw); if (reqId.current === mine) { setResults(r); setSStatus('ok'); } }
+                catch (err) { console.error('搜尋失敗:', err); if (reqId.current === mine && silent !== true) setSStatus('error'); }
+            }, []);
+            useEffect(() => {
+                if (!session || !REVIEWER_ROLES.includes(role)) return;
+                if (!keyword) { reqId.current++; setSStatus('idle'); setResults([]); return; }
+                const t = setTimeout(() => runSearch(keyword), 350);
+                return () => clearTimeout(t);
+            }, [keyword, session, role, runSearch]);
+
+            const onPatch = (id, patch) => { setPosts(l => l.map(p => p.id === id ? { ...p, ...patch } : p)); setResults(l => l.map(p => p.id === id ? { ...p, ...patch } : p)); };
+            // 核准／退回：一般清單中卡片消失；搜尋時貼文還在，所以改成重新搜尋更新狀態
+            const onRemove = (id) => { if (!searching) setPosts(l => l.filter(p => p.id !== id)); };
+            const onDeleted = (id) => { setPosts(l => l.filter(p => p.id !== id)); setResults(l => l.filter(p => p.id !== id)); };
 
             if (!session) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><NeedLogin onLogin={onLogin} /></PageShell>;
             if (!REVIEWER_ROLES.includes(role)) return <PageShell back={<BackButton onClick={goHome} label="返回禱告牆" />}><EmptyBox message="只有牧師、區長與管理員可以進入審查頁" /></PageShell>;
 
             const tabs = [{ id: 'pending', label: '待審查' }, { id: 'returned', label: '已退回' }, { id: 'approved', label: '編輯' }];
-            const onChanged = async () => { await load(true); refreshPending(); };
+            const onChanged = async () => { if (searching) await runSearch(keyword, true); else await load(true); refreshPending(); };
 
             return (
                 <PageShell>
-                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">審查貼文</h2>
-                    <TabBar tabs={tabs} value={tab} onChange={setTab} />
-                    {status === 'loading' && <Skeletons />}
-                    {status === 'error' && <ErrorBox message="暫時無法載入審查清單，請稍後再試" onRetry={() => load()} />}
-                    {status === 'ok' && posts.length === 0 && <EmptyBox message={tab === 'pending' ? '目前沒有待審查的禱告' : '這個分類目前沒有禱告'} />}
-                    {status === 'ok' && posts.length > 0 && (
-                        <ul className="flex flex-col gap-4">
-                            {posts.map(p => <ReviewCard key={p.id} post={p} onChanged={onChanged} onPatch={onPatch} onRemove={onRemove} />)}
-                        </ul>
+                    <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-4">審查貼文</h2>
+                    <div role="search" className="relative mb-5">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><SearchIcon size={20} /></span>
+                        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} enterKeyHint="search" placeholder="搜尋貼文內容或貼文者" aria-label="搜尋貼文"
+                            className="w-full bg-zinc-100 rounded-full pl-11 pr-11 py-3 text-zinc-900 font-medium placeholder:text-zinc-400 hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150" />
+                        {searching && (
+                            <button type="button" onClick={() => setQuery('')} aria-label="清除搜尋"
+                                className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-full text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200 active:bg-zinc-300 transition-colors duration-150 ${focusRing}`}><XIcon size={18} /></button>
+                        )}
+                    </div>
+
+                    {searching ? (
+                        <>
+                            {sStatus === 'loading' && <Skeletons />}
+                            {sStatus === 'error' && <ErrorBox message="暫時無法搜尋，請稍後再試" onRetry={() => runSearch(keyword)} />}
+                            {sStatus === 'ok' && results.length === 0 && <EmptyBox message="找不到，換個關鍵字試試" />}
+                            {sStatus === 'ok' && results.length > 0 && (
+                                <ul className="flex flex-col gap-4">
+                                    {results.map(p => <ReviewCard key={p.id} post={p} onChanged={onChanged} onPatch={onPatch} onRemove={onRemove} onDeleted={onDeleted} />)}
+                                </ul>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <TabBar tabs={tabs} value={tab} onChange={setTab} />
+                            {status === 'loading' && <Skeletons />}
+                            {status === 'error' && <ErrorBox message="暫時無法載入審查清單，請稍後再試" onRetry={() => load()} />}
+                            {status === 'ok' && posts.length === 0 && <EmptyBox message={tab === 'pending' ? '目前沒有待審查的禱告' : '這個分類目前沒有禱告'} />}
+                            {status === 'ok' && posts.length > 0 && (
+                                <ul className="flex flex-col gap-4">
+                                    {posts.map(p => <ReviewCard key={p.id} post={p} onChanged={onChanged} onPatch={onPatch} onRemove={onRemove} onDeleted={onDeleted} />)}
+                                </ul>
+                            )}
+                        </>
                     )}
                 </PageShell>
             );
@@ -1452,7 +1465,7 @@
 
             let body;
             if (!sessionReady && ['submit', 'mine', 'edit', 'review', 'notifications'].includes(route.name)) body = <PageShell><Skeletons /></PageShell>;
-            else if (route.name === 'search') body = <SearchView goHome={goHome} canManage={isReviewer} />;
+            else if (route.name === 'search') body = <SearchView goHome={goHome} />;
             else if (route.name === 'submit') body = <SubmitView session={session} onLogin={() => setShowLogin(true)} goMine={goMine} goHome={goHome} notify={notify} />;
             else if (route.name === 'mine') body = <MineView session={session} role={role} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} flash={flash} />;
             else if (route.name === 'edit') body = <EditView key={route.id} id={route.id} session={session} onLogin={() => setShowLogin(true)} goMine={goMine} notify={notify} />;
