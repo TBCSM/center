@@ -506,18 +506,82 @@
             );
         };
 
-        const PostCard = ({ p, onResponded }) => {
+        // 彈出視窗：確認刪除貼文（點背景、按 Esc 或「取消」都會關閉）
+        const ConfirmModal = ({ title, confirmLabel, busy, error, onCancel, onConfirm }) => {
+            useEffect(() => {
+                const onKey = (e) => { if (e.key === 'Escape' && !busy) onCancel(); };
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            }, [busy, onCancel]);
+            return (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 animate-fade-in" onClick={() => { if (!busy) onCancel(); }}>
+                    <div role="alertdialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
+                        className="w-full max-w-xs bg-white rounded-2xl shadow-xl border border-zinc-100 p-6 flex flex-col gap-5">
+                        <h3 className="text-lg font-black text-zinc-900 text-center">{title}</h3>
+                        <InlineError message={error} />
+                        <div className="grid grid-cols-2 gap-3">
+                            <button type="button" onClick={onCancel} disabled={busy} autoFocus className={btnCancelWhite}>取消</button>
+                            <button type="button" onClick={onConfirm} disabled={busy} className={btnReturnSoft}>{busy ? '刪除中…' : confirmLabel}</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // canManage：牧師、區長、管理員在搜尋結果可以直接「編輯內容」或「刪除」貼文
+        const PostCard = ({ p, onResponded, canManage, onEdited, onDeleted }) => {
             const [error, setError] = useState('');
+            const [editing, setEditing] = useState(false);
+            const [draft, setDraft] = useState('');
+            const [saving, setSaving] = useState(false);
+            const [confirmDel, setConfirmDel] = useState(false);
+            const [deleting, setDeleting] = useState(false);
             const text = p.content ?? p.summary ?? '';
             const name = !p.display_name || p.display_name === '匿名' ? ANON_NAME : p.display_name;
+
+            const startEdit = () => { setDraft(text); setError(''); setEditing(true); };
+            const saveEdit = async () => {
+                const content = draft.trim();
+                if (!content) { setError('內容不可空白'); return; }
+                if (content === text) { setEditing(false); return; }
+                setSaving(true); setError('');
+                try { await api.editContent(p.id, content); onEdited(p.id, content); setEditing(false); }
+                catch (err) { setError(err.message || '儲存失敗，請稍後再試'); }
+                finally { setSaving(false); }
+            };
+            const doDelete = async () => {
+                setDeleting(true); setError('');
+                try { await api.deletePost(p.id); onDeleted(p.id); }
+                catch (err) { setError(err.message || '刪除失敗，請稍後再試'); setDeleting(false); }
+            };
+
             return (
                 <li className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 sm:p-5">
-                    <div className="flex items-center gap-3 mb-2.5">
-                        <CategoryAvatar id={p.category} />
-                        <span className="text-[15px] font-bold text-zinc-900 truncate min-w-0">{name}</span>
+                    <div className="flex items-center justify-between gap-3 mb-2.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <CategoryAvatar id={p.category} />
+                            <span className="text-[15px] font-bold text-zinc-900 truncate min-w-0">{name}</span>
+                        </div>
+                        {canManage && (
+                            <div className="flex items-center gap-1 shrink-0">
+                                {editing && <button type="button" onClick={() => { setEditing(false); setError(''); }} disabled={saving} className={btnGhost}><XMarkIcon size={16} />取消</button>}
+                                <button type="button" onClick={editing ? saveEdit : startEdit} disabled={saving} aria-expanded={editing} className={btnGhost}>
+                                    {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中…' : '儲存') : '編輯'}
+                                </button>
+                                <button type="button" onClick={() => { setError(''); setConfirmDel(true); }} disabled={saving} aria-label="刪除貼文" title="刪除貼文"
+                                    className={`${btnGhost} !px-2 hover:!text-red-600`}><TrashIcon size={16} /></button>
+                            </div>
+                        )}
                     </div>
 
-                    <ClampText text={text} />
+                    {editing ? (
+                        <label className="flex flex-col gap-1.5">
+                            <span className="flex justify-between text-xs font-bold text-zinc-500">內容 <span className="font-mono tabular-nums text-zinc-400">{draft.length}/800</span></span>
+                            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={800} rows={6} className={`${inputCls} leading-relaxed resize-y`} />
+                        </label>
+                    ) : (
+                        <ClampText text={text} />
+                    )}
 
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
                         <PrayButton postId={p.id} count={Number(p.response_count) || 0} responded={!!p.has_responded} onResponded={onResponded} onError={setError} />
@@ -525,7 +589,8 @@
                             <ClockIcon size={18} /><span className="sr-only">時間：</span>{formatAgo(p.created_at)}
                         </span>
                     </div>
-                    {error && <div className="mt-2"><InlineError message={error} /></div>}
+                    {error && !confirmDel && <div className="mt-2"><InlineError message={error} /></div>}
+                    {confirmDel && <ConfirmModal title="刪除貼文？" confirmLabel="刪除" busy={deleting} error={error} onCancel={() => { setConfirmDel(false); setError(''); }} onConfirm={doDelete} />}
                 </li>
             );
         };
@@ -587,7 +652,7 @@
 
         const chipCls = (active) => `px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors duration-150 active:scale-[0.98] ${focusRing} ${active ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`;
 
-        const SearchView = ({ goHome }) => {
+        const SearchView = ({ goHome, canManage }) => {
             const [draft, setDraft] = useState('');
             const [category, setCategory] = useState('all');
             const [showFilter, setShowFilter] = useState(false);
@@ -626,6 +691,8 @@
             const removeRecent = (kw) => { const next = recent.filter(x => x !== kw); setRecent(next); saveRecent(next); if (next.length === 0) setEditing(false); };
             const clearRecent = () => { setRecent([]); saveRecent([]); setEditing(false); };
             const patch = (id, n) => setResults(list => list.map(x => x.id === id ? { ...x, response_count: n, has_responded: true } : x));
+            const onEdited = (id, content) => setResults(list => list.map(x => x.id === id ? { ...x, content } : x));
+            const onDeleted = (id) => setResults(list => list.filter(x => x.id !== id));
 
             return (
                 <main className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-3 pb-20 animate-fade-in">
@@ -688,7 +755,7 @@
                             {status === 'ok' && results.length === 0 && <EmptyBox message="找不到，換個關鍵字試試" />}
                             {status === 'ok' && results.length > 0 && (
                                 <ul className="flex flex-col gap-3">
-                                    {results.map(p => <PostCard key={p.id} p={p} onResponded={(n) => patch(p.id, n)} />)}
+                                    {results.map(p => <PostCard key={p.id} p={p} onResponded={(n) => patch(p.id, n)} canManage={canManage} onEdited={onEdited} onDeleted={onDeleted} />)}
                                 </ul>
                             )}
                         </section>
@@ -1087,13 +1154,8 @@
                     className={`${btnGhost} !px-2 hover:!text-red-600`}><TrashIcon size={16} /></button>
             );
             const deleteBlock = confirmDel && (
-                <div className="mt-4 bg-red-50 border border-red-100 rounded-lg p-3 flex flex-col gap-3" role="alertdialog" aria-label="確認刪除貼文">
-                    <p className="text-sm text-red-900">確定要刪除這則貼文嗎？刪除後無法復原，這則貼文的禱告次數、審查紀錄與通知也會一併刪除。</p>
-                    <div className="grid grid-cols-2 gap-3">
-                        <button type="button" onClick={() => { setConfirmDel(false); setError(''); }} disabled={deleting} className={btnCancelWhite}>取消</button>
-                        <button type="button" onClick={doDelete} disabled={deleting} className={btnReturnSoft}>{deleting ? '刪除中…' : '刪除'}</button>
-                    </div>
-                </div>
+                <ConfirmModal title="刪除貼文？" confirmLabel="刪除" busy={deleting} error={error}
+                    onCancel={() => { setConfirmDel(false); setError(''); }} onConfirm={doDelete} />
             );
             const headerRow = (actions) => (
                 <div className="flex items-center justify-between gap-3 mb-2.5">
@@ -1390,7 +1452,7 @@
 
             let body;
             if (!sessionReady && ['submit', 'mine', 'edit', 'review', 'notifications'].includes(route.name)) body = <PageShell><Skeletons /></PageShell>;
-            else if (route.name === 'search') body = <SearchView goHome={goHome} />;
+            else if (route.name === 'search') body = <SearchView goHome={goHome} canManage={isReviewer} />;
             else if (route.name === 'submit') body = <SubmitView session={session} onLogin={() => setShowLogin(true)} goMine={goMine} goHome={goHome} notify={notify} />;
             else if (route.name === 'mine') body = <MineView session={session} role={role} onLogin={() => setShowLogin(true)} goHome={goHome} goEdit={(id) => go(`#/edit/${id}`)} flash={flash} />;
             else if (route.name === 'edit') body = <EditView key={route.id} id={route.id} session={session} onLogin={() => setShowLogin(true)} goMine={goMine} notify={notify} />;
