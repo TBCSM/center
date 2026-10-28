@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>守望花園 - TBC Serve</title>
+    <title>守望花園</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -344,7 +344,7 @@
         );
 
         const NeedLogin = ({ onLogin }) => (
-            <EmptyBox message="這個功能需要先登入" action={<button onClick={onLogin} className={btnDark}>登入</button>} />
+            <EmptyBox message="需要登入" action={<button onClick={onLogin} className={btnDark}>登入</button>} />
         );
 
         // ==========================================
@@ -364,7 +364,7 @@
                 const { error } = await supabase.auth.signInWithPassword({ email: formatEmailForAuth(account), password });
                 setBusy(false);
                 if (error) {
-                    setError(error.message.includes('Invalid login credentials') ? '登入失敗：帳號或密碼錯誤' : '登入時發生問題，請稍後再試');
+                    setError(error.message.includes('Invalid login credentials') ? '登入失敗：帳號或密碼錯誤' : '登入發生問題，稍後再試');
                     return;
                 }
                 onClose();
@@ -418,7 +418,7 @@
 
                                 <button type="submit" disabled={busy}
                                     className={`w-full bg-gradient-to-r from-indigo-600 to-emerald-600 hover:opacity-95 active:opacity-90 text-white font-medium py-3.5 rounded-lg shadow-md transition-opacity duration-150 mt-4 text-base ${disabledCls} ${focusRing}`}>
-                                    {busy ? '處理中...' : '登入'}
+                                    {busy ? '處理中' : '登入'}
                                 </button>
                             </form>
 
@@ -463,14 +463,14 @@
                     onResponded(n);
                 } catch (err) {
                     setLocal(before);
-                    if (onError) onError(err.message || '暫時無法送出，請稍後再試');
+                    if (onError) onError(err.message || '暫時無法送出，稍後再試');
                 }
             };
 
             const label = local.responded ? `已禱告，禱告回應次數 ${local.count}` : `我已禱告，目前禱告回應次數 ${local.count}`;
             return (
                 <div className="flex items-center gap-1.5">
-                    <button type="button" onClick={click} aria-pressed={local.responded} aria-label={label} title={local.responded ? '已禱告' : '我已禱告'}
+                    <button type="button" onClick={click} aria-pressed={local.responded} aria-label={label} title={local.responded ? '已禱告' : '一起禱告'}
                         className={`-ml-2.5 p-2.5 rounded-full transition-colors duration-150 ${focusRing} ${popping ? 'animate-pop' : ''} ${local.responded ? 'text-red-500 cursor-default' : 'text-zinc-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100'}`}>
                         <PrayIcon filled={local.responded} />
                     </button>
@@ -545,7 +545,7 @@
                         <InlineError message={error} />
                         <div className="grid grid-cols-2 gap-3">
                             <button type="button" onClick={onCancel} disabled={busy} autoFocus className={btnCancelWhite}>取消</button>
-                            <button type="button" onClick={onConfirm} disabled={busy} className={btnReturnSoft}>{busy ? '刪除中…' : confirmLabel}</button>
+                            <button type="button" onClick={onConfirm} disabled={busy} className={btnReturnSoft}>{busy ? '刪除中' : confirmLabel}</button>
                         </div>
                     </div>
                 </div>
@@ -588,7 +588,7 @@
             const load = useCallback(async (silent) => {
                 if (silent !== true) setStatus('loading');
                 try { setResults(await api.search('', 'all')); setStatus('ok'); lastLoad.current = Date.now(); }
-                catch (err) { console.error('讀取禱告失敗:', err); if (silent !== true) setStatus('error'); }
+                catch (err) { console.error('讀取失敗:', err); if (silent !== true) setStatus('error'); }
             }, []);
             useEffect(() => { load(); }, [load]);
             // 回到這個分頁時，如果超過 1 分鐘沒更新，就在背景更新最新貼文與次數
@@ -605,14 +605,14 @@
                     <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight leading-snug mb-5">每一次禱告，都是一滴滋養生命的水</h2>
                     <section aria-live="polite">
                         {status === 'loading' && <Skeletons />}
-                        {status === 'error' && <ErrorBox message="暫時無法載入禱告事項，請稍後再試" onRetry={() => load()} />}
-                        {status === 'ok' && results.length === 0 && <EmptyBox message="還沒有禱告，成為第一個分享的人吧" action={<button onClick={goSubmit} className={btnDark}>新增貼文</button>} />}
+                        {status === 'error' && <ErrorBox message="暫時無法載入，稍後再試" onRetry={() => load()} />}
+                        {status === 'ok' && results.length === 0 && <EmptyBox message="讓我們一起守望禱告" action={<button onClick={goSubmit} className={btnDark}>新增貼文</button>} />}
                         {status === 'ok' && results.length > 0 && (
                             <ul className="flex flex-col gap-3">
                                 {results.map(p => <PostCard key={p.id} p={p} onResponded={(n) => patch(p.id, n)} />)}
                             </ul>
                         )}
-                        {status === 'ok' && results.length >= 50 && <p className="text-center text-sm text-zinc-400 mt-6">只顯示最新 50 則，想找更早的請用右上角搜尋</p>}
+                        {status === 'ok' && results.length >= 50 && <p className="text-center text-sm text-zinc-400 mt-6">顯示最新 50 則，更多請用搜尋</p>}
                     </section>
                 </main>
             );
@@ -836,9 +836,9 @@
                 try {
                     await api.submit(values);
                     clearDraft();
-                    notify('已送出，這則禱告現在是「待審查」，審查通過後才會公開。');
+                    notify('已送出，審查通過後才會公開。');
                     goMine();
-                } catch (err) { setError(err.message || '送出失敗，請稍後再試'); }
+                } catch (err) { setError(err.message || '送出失敗，稍後再試'); }
                 finally { setBusy(false); }
             };
             return (
@@ -862,7 +862,7 @@
                 return () => { alive = false; };
             }, [postId]);
             if (error) return <p className="text-sm text-red-600">{error}</p>;
-            if (!logs) return <p className="text-sm text-zinc-400 animate-pulse">載入中…</p>;
+            if (!logs) return <p className="text-sm text-zinc-400 animate-pulse">載入中</p>;
             return (
                 <ol className="flex flex-col gap-3 border-l-2 border-zinc-100 pl-4">
                     {logs.map(l => (
@@ -941,7 +941,7 @@
                     setPosts(list);
                     setReasons(await api.latestReturnReasons(list.filter(p => p.review_status === 'returned').map(p => p.id)));
                     setStatus('ok');
-                } catch (err) { console.error('讀取我的禱告失敗:', err); setStatus('error'); }
+                } catch (err) { console.error('讀取失敗:', err); setStatus('error'); }
             }, [session?.user?.id]);
             useEffect(() => { load(); }, [load]);
 
@@ -959,8 +959,8 @@
                     <TabBar tabs={tabs} value={tab} onChange={setTab} />
 
                     {status === 'loading' && <Skeletons />}
-                    {status === 'error' && <ErrorBox message="暫時無法載入你的禱告，請稍後再試" onRetry={load} />}
-                    {status === 'ok' && shown.length === 0 && <EmptyBox message={tab === 'all' ? '你還沒有貼文' : '這個分類目前沒有禱告'} />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入，稍後再試" onRetry={load} />}
+                    {status === 'ok' && shown.length === 0 && <EmptyBox message={tab === 'all' ? '你還沒有貼文' : '目前沒有貼文'} />}
                     {status === 'ok' && shown.length > 0 && (
                         <ul className="flex flex-col gap-4">
                             {shown.map(p => <MyPostCard key={p.id} post={p} reason={reasons[p.id]} showStatus={tab === 'all'} goEdit={goEdit} canSeeHistory={REVIEWER_ROLES.includes(role)} />)}
@@ -1000,9 +1000,9 @@
                 setBusy(true); setError('');
                 try {
                     await api.resubmit(id, values);
-                    notify('已重新送審，狀態回到「待審查」。先前的審查紀錄都有保留。');
+                    notify('重新送審成功，請耐心等候');
                     goMine();
-                } catch (err) { setError(err.message || '送出失敗，請稍後再試'); }
+                } catch (err) { setError(err.message || '送出失敗，稍後再試'); }
                 finally { setBusy(false); }
             };
 
@@ -1010,8 +1010,8 @@
                 <PageShell back={<BackButton onClick={goMine} label="返回我的禱告" />}>
                     <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">編輯重新送審</h2>
                     {status === 'loading' && <Skeletons />}
-                    {status === 'error' && <ErrorBox message="暫時無法載入，請稍後再試" />}
-                    {status === 'notfound' && <EmptyBox message="找不到這則禱告，或它目前不是「已退回」狀態" action={<button onClick={goMine} className={btnDark}>回到我的禱告</button>} />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入，稍後再試" />}
+                    {status === 'notfound' && <EmptyBox message="找不到貼文" action={<button onClick={goMine} className={btnDark}>回到我的禱告</button>} />}
                     {status === 'ok' && post && (
                         <PostForm
                             initial={{ content: post.content, category: post.category, is_public: post.is_public, show_name: post.show_name }}
@@ -1041,14 +1041,14 @@
             const doDelete = async () => {
                 setDeleting(true); setError('');
                 try { await api.deletePost(post.id); (onDeleted || onRemove)(post.id); onChanged(); }
-                catch (err) { setError(err.message || '刪除失敗，請稍後再試'); setDeleting(false); }
+                catch (err) { setError(err.message || '刪除失敗，稍後再試'); setDeleting(false); }
             };
 
             // 核准或退回：成功後這張卡片立刻從「待審查」消失，再到背景更新清單
             const run = async (fn) => {
                 setBusy(true); setError('');
                 try { await fn(); onRemove(post.id); onChanged(); }
-                catch (err) { setError(err.message || '操作失敗，請稍後再試'); setBusy(false); }
+                catch (err) { setError(err.message || '操作失敗，稍後再試'); setBusy(false); }
             };
 
             // 就地更新：先立刻改畫面，再通知資料庫；失敗才還原。不重新載入清單，所以畫面不會晃動。
@@ -1063,7 +1063,7 @@
                 try { await call(); }
                 catch (err) {
                     if (seq.current === mine) onPatch(post.id, prev);
-                    setError(err.message || '操作失敗，請稍後再試');
+                    setError(err.message || '操作失敗，稍後再試');
                 }
             };
 
@@ -1075,7 +1075,7 @@
                 if (content === post.content) { setEditing(false); return; }
                 setSaving(true); setError('');
                 try { await api.editContent(post.id, content); onPatch(post.id, { content }); setEditing(false); }
-                catch (err) { setError(err.message || '儲存失敗，請稍後再試'); }
+                catch (err) { setError(err.message || '儲存失敗，稍後再試'); }
                 finally { setSaving(false); }
             };
 
@@ -1170,7 +1170,7 @@
                 <div className="flex items-center gap-1 shrink-0">
                     {editing && <button type="button" onClick={cancelEdit} disabled={saving} className={ghostBtn}><XMarkIcon size={16} />取消</button>}
                     <button type="button" onClick={editing ? saveEdit : startEdit} disabled={saving} aria-expanded={editing} className={ghostBtn}>
-                        {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中…' : '儲存') : '編輯'}
+                        {editing ? <CheckIcon size={16} /> : <PencilIcon size={16} />}{editing ? (saving ? '儲存中' : '儲存') : '編輯'}
                     </button>
                     {trashBtn}
                 </div>
@@ -1181,14 +1181,14 @@
                     <textarea id={`reason-${post.id}`} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} autoFocus className={`${inputCls} resize-y`} />
                     <div className="grid grid-cols-2 gap-3">
                         <button onClick={() => { setReturning(false); setReason(''); setError(''); }} disabled={busy} className={btnCancel}>取消</button>
-                        <button onClick={() => run(() => api.returnPost(post.id, reason))} disabled={busy || !reason.trim()} className={btnReturnSoft}>{busy ? '處理中…' : '退回'}</button>
+                        <button onClick={() => run(() => api.returnPost(post.id, reason))} disabled={busy || !reason.trim()} className={btnReturnSoft}>{busy ? '處理中' : '退回'}</button>
                     </div>
                 </div>
             ) : (
                 <div className="grid grid-cols-2 gap-3 mt-4">
                     <button onClick={() => run(() => api.approve(post.id, isPublic))} disabled={busy}
                         className={`inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white text-base font-medium transition-colors duration-150 ${disabledCls} ${focusRing}`}>
-                        <CheckIcon size={18} />{busy ? '處理中…' : '核准'}
+                        <CheckIcon size={18} />{busy ? '處理中' : '核准'}
                     </button>
                     <button onClick={() => setReturning(true)} disabled={busy}
                         className={`inline-flex items-center justify-center gap-2 h-12 rounded-xl border border-red-300 bg-white hover:bg-red-50 active:bg-red-100 text-red-700 text-base font-medium transition-colors duration-150 ${disabledCls} ${focusRing}`}>
@@ -1210,7 +1210,7 @@
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-zinc-500">
                         {pending && (
                             <span className="inline-flex items-center gap-1.5 text-sm min-w-0">
-                                <UserIcon size={18} /><span className="sr-only">提報者：</span><span className="truncate max-w-[10rem]">{post.author_name}</span>
+                                <UserIcon size={18} /><span className="sr-only">貼文：</span><span className="truncate max-w-[10rem]">{post.author_name}</span>
                             </span>
                         )}
                         {timeSpan}
@@ -1279,7 +1279,7 @@
                     <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-4">審查貼文</h2>
                     <div role="search" className="relative mb-5">
                         <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><SearchIcon size={20} /></span>
-                        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} enterKeyHint="search" placeholder="搜尋貼文內容或貼文者" aria-label="搜尋貼文"
+                        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} enterKeyHint="search" placeholder="搜尋內容或貼文者" aria-label="搜尋貼文"
                             className="w-full bg-zinc-100 rounded-full pl-11 pr-11 py-3 text-zinc-900 font-medium placeholder:text-zinc-400 hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150" />
                         {searching && (
                             <button type="button" onClick={() => setQuery('')} aria-label="清除搜尋"
@@ -1290,7 +1290,7 @@
                     {searching ? (
                         <>
                             {sStatus === 'loading' && <Skeletons />}
-                            {sStatus === 'error' && <ErrorBox message="暫時無法搜尋，請稍後再試" onRetry={() => runSearch(keyword)} />}
+                            {sStatus === 'error' && <ErrorBox message="暫時無法搜尋，稍後再試" onRetry={() => runSearch(keyword)} />}
                             {sStatus === 'ok' && results.length === 0 && <EmptyBox message="找不到，換個關鍵字試試" />}
                             {sStatus === 'ok' && results.length > 0 && (
                                 <ul className="flex flex-col gap-4">
@@ -1302,8 +1302,8 @@
                         <>
                             <TabBar tabs={tabs} value={tab} onChange={setTab} />
                             {status === 'loading' && <Skeletons />}
-                            {status === 'error' && <ErrorBox message="暫時無法載入審查清單，請稍後再試" onRetry={() => load()} />}
-                            {status === 'ok' && posts.length === 0 && <EmptyBox message={tab === 'pending' ? '目前沒有待審查的禱告' : '這個分類目前沒有禱告'} />}
+                            {status === 'error' && <ErrorBox message="無法載入審查清單，稍後再試" onRetry={() => load()} />}
+                            {status === 'ok' && posts.length === 0 && <EmptyBox message={tab === 'pending' ? '目前沒有貼文' : '目前沒有貼文'} />}
                             {status === 'ok' && posts.length > 0 && (
                                 <ul className="flex flex-col gap-4">
                                     {posts.map(p => <ReviewCard key={p.id} post={p} onChanged={onChanged} onPatch={onPatch} onRemove={onRemove} onDeleted={onDeleted} />)}
@@ -1345,7 +1345,7 @@
                     <h2 className="text-2xl font-black text-zinc-900 tracking-tight mb-6">通知</h2>
 
                     {status === 'loading' && <Skeletons />}
-                    {status === 'error' && <ErrorBox message="暫時無法載入通知，請稍後再試" onRetry={load} />}
+                    {status === 'error' && <ErrorBox message="暫時無法載入，稍後再試" onRetry={load} />}
                     {status === 'ok' && items.length === 0 && <EmptyBox message="目前沒有通知" />}
                     {status === 'ok' && items.length > 0 && (
                         <ul className="flex flex-col gap-4">
