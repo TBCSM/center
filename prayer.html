@@ -167,6 +167,10 @@
         const XMarkIcon = (p) => <Icon {...p} d={<React.Fragment><path d="M18 6 6 18" /><path d="m6 6 12 12" /></React.Fragment>} />;
         const ActivityIcon = (p) => <Icon {...p} d={<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />} />;
 
+        // 日期區間：開始日 00:00:00 到結束日 23:59:59（以瀏覽器所在時區計算）
+        const dayStartISO = (d) => new Date(`${d}T00:00:00`).toISOString();
+        const dayEndISO = (d) => new Date(`${d}T23:59:59.999`).toISOString();
+
         // ==========================================
         // 資料存取：全部透過資料庫的窗口（函式）或受警衛規則保護的查詢
         // ==========================================
@@ -181,7 +185,12 @@
             return data;
         };
         const api = {
-            search: async (keyword, category) => (await rpc('search_public_prayers', { p_keyword: keyword, p_category: category, p_visitor: getVisitorId() })) || [],
+            search: async (keyword, category, from, to) => {
+                const args = { p_keyword: keyword, p_category: category, p_visitor: getVisitorId() };
+                if (from) args.p_from = dayStartISO(from);
+                if (to) args.p_to = dayEndISO(to);
+                return (await rpc('search_public_prayers', args)) || [];
+            },
             detail: async (id) => { const d = await rpc('get_public_prayer', { p_id: id, p_visitor: getVisitorId() }); return (d && d[0]) || null; },
             respond: async (postId) => { const d = await rpc('respond_prayer', { p_post_id: postId, p_visitor: getVisitorId() }); return d && d[0]; },
             setCategory: (id, category) => rpc('set_prayer_category', { p_id: id, p_category: category }),
@@ -532,6 +541,23 @@
             );
         };
 
+        // 日期區間輸入：「開始」「結束」（一般搜尋與審查搜尋共用）
+        const DateRange = ({ from, to, onFrom, onTo, className = '' }) => {
+            const fieldCls = "w-full bg-zinc-100 rounded-xl px-3 py-2.5 text-sm text-zinc-900 font-medium hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150";
+            return (
+                <div className={`grid grid-cols-2 gap-3 ${className}`} role="group" aria-label="日期區間">
+                    <label className="flex flex-col gap-1 min-w-0">
+                        <span className="text-xs font-bold text-zinc-500">開始</span>
+                        <input type="date" value={from} onChange={(e) => onFrom(e.target.value)} max={to || undefined} className={fieldCls} />
+                    </label>
+                    <label className="flex flex-col gap-1 min-w-0">
+                        <span className="text-xs font-bold text-zinc-500">結束</span>
+                        <input type="date" value={to} onChange={(e) => onTo(e.target.value)} min={from || undefined} className={fieldCls} />
+                    </label>
+                </div>
+            );
+        };
+
         // 彈出視窗：確認刪除貼文（點背景、按 Esc 或「取消」都會關閉）
         const ConfirmModal = ({ title, confirmLabel, busy, error, onCancel, onConfirm }) => {
             useEffect(() => {
@@ -644,14 +670,17 @@
             const [results, setResults] = useState([]);
             const [status, setStatus] = useState('idle');
             const reqId = useRef(0);
+            const [dateFrom, setDateFrom] = useState('');
+            const [dateTo, setDateTo] = useState('');
             const keyword = draft.trim();
-            const active = keyword !== '' || category !== 'all';
+            const rangeBad = dateFrom !== '' && dateTo !== '' && dateFrom > dateTo;
+            const active = keyword !== '' || category !== 'all' || dateFrom !== '' || dateTo !== '';
 
-            const run = useCallback(async (kw, cat) => {
+            const run = useCallback(async (kw, cat, from, to) => {
                 const mine = ++reqId.current;
                 setStatus(s => s === 'ok' ? s : 'loading');   // 已有結果時不閃骨架畫面，直接換內容
                 try {
-                    const r = await api.search(kw, cat);
+                    const r = await api.search(kw, cat, from, to);
                     if (reqId.current === mine) { setResults(r); setStatus('ok'); }
                 } catch (err) {
                     console.error('搜尋失敗:', err);
@@ -660,10 +689,10 @@
             }, []);
 
             useEffect(() => {
-                if (!active) { reqId.current++; setStatus('idle'); setResults([]); return; }
-                const t = setTimeout(() => run(keyword, category), 350);
+                if (!active || rangeBad) { reqId.current++; setStatus('idle'); setResults([]); return; }
+                const t = setTimeout(() => run(keyword, category, dateFrom, dateTo), 350);
                 return () => clearTimeout(t);
-            }, [keyword, category, active, run]);
+            }, [keyword, category, dateFrom, dateTo, active, rangeBad, run]);
 
             const remember = (kw) => {
                 if (!kw) return;
@@ -690,6 +719,9 @@
                             </button>
                         </div>
                     </form>
+
+                    <DateRange from={dateFrom} to={dateTo} onFrom={setDateFrom} onTo={setDateTo} className="mt-4" />
+                    {rangeBad && <div className="mt-3"><InlineError message="開始日期不可晚於結束日期" /></div>}
 
                     {showFilter && (
                         <div className="flex overflow-x-auto no-scrollbar gap-2 mt-4" role="group" aria-label="分類">
@@ -1291,13 +1323,7 @@
                                 className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-full text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200 active:bg-zinc-300 transition-colors duration-150 ${focusRing}`}><XIcon size={18} /></button>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 -mt-2 mb-5" role="group" aria-label="日期區間">
-                        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} max={dateTo || undefined} aria-label="開始日期"
-                            className="min-w-0 flex-1 bg-zinc-100 rounded-xl px-3 py-2.5 text-sm text-zinc-900 font-medium hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150" />
-                        <span className="text-zinc-400 text-sm shrink-0" aria-hidden="true">～</span>
-                        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} min={dateFrom || undefined} aria-label="結束日期"
-                            className="min-w-0 flex-1 bg-zinc-100 rounded-xl px-3 py-2.5 text-sm text-zinc-900 font-medium hover:bg-zinc-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 transition-colors duration-150" />
-                    </div>
+                    <DateRange from={dateFrom} to={dateTo} onFrom={setDateFrom} onTo={setDateTo} className="-mt-2 mb-5" />
                     {rangeBad && <div className="mb-4"><InlineError message="開始日期不可晚於結束日期" /></div>}
 
                     {searching ? (
