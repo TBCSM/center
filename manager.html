@@ -147,14 +147,14 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Activity, LogOut, AlertCircle, User, Lock, Users, Calendar, ArrowRight, ShieldCheck, Eye, EyeOff, BarChart3, Menu, X, Home, Check, HandHeart } from 'lucide-react';
+        import { Activity, LogOut, AlertCircle, User, Lock, Users, Calendar, ArrowRight, ShieldCheck, Eye, EyeOff, BarChart3, Menu, X, Home, Check, HandHeart, UserCheck, FolderOpen, Star, GraduationCap } from 'lucide-react';
         import { createClient } from '@supabase/supabase-js';
 
         // ==========================================
         // 初始化連線與共用常數
         // ==========================================
-        const SUPABASE_URL = "https://jtjgqrqbewbgxscytkod.supabase.co";
-        const SUPABASE_KEY = "sb_publishable_TcixlGOMSLBSZNoMNOp6Ng_B-N4Tw1K"; 
+        const SUPABASE_URL = "https://jcepavwocdujoeoqxvsd.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_Tj2n8e3yY1HyvaFzXRyO_w_PWrVFB7E"; 
         const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
         // 與「我的服事」(search.html) 共用的登入身分：寫入同一個 tbc_user，進入我的服事時就不用再登入
@@ -324,8 +324,11 @@
             );
         };
 
-        const AppHeader = ({ title, name, account, onLogout }) => {
-            const accountInfo = account ? maskAccountForDisplay(account) : null;
+        const ROLE_ICON_MAP = { member: User, coworker: UserCheck, admin_staff: FolderOpen, leader: Star, pastor: GraduationCap, admin: ShieldCheck };
+        const ROLE_NAME_MAP = { member: '會友', coworker: '同工', admin_staff: '行政', leader: '領袖', pastor: '牧師', admin: '系統管理員' };
+
+        const AppHeader = ({ title, name, role, onLogout }) => {
+            const RoleIcon = ROLE_ICON_MAP[role] || User;
             return (
                 <React.Fragment>
                     <nav className="bg-emerald-600 text-white sticky top-0 z-50" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
@@ -338,17 +341,10 @@
                     <div className="bg-emerald-600 text-white relative z-10">
                         <div className="max-w-2xl mx-auto w-full px-4 sm:px-6 pt-1 pb-6 flex items-center gap-4">
                             <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                                <User size={32} />
+                                <RoleIcon size={32} title={ROLE_NAME_MAP[role] || ''} />
                             </div>
                             <div className="min-w-0">
                                 <h2 className="text-2xl font-black truncate">{name}</h2>
-                                {accountInfo && (
-                                    <div className="mt-1.5">
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                            <p className="text-sm font-semibold text-white/90 truncate">{accountInfo.masked}</p>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
@@ -542,6 +538,7 @@
         // ==========================================
         const MainApp = ({ session }) => {
             const [isAdmin, setIsAdmin] = useState(false);
+            const [myRole, setMyRole] = useState('member');
             const [isRoleChecking, setIsRoleChecking] = useState(true);
             const [currentApp, setCurrentApp] = useState('members'); 
             const [myName, setMyName] = useState('');
@@ -586,6 +583,7 @@
 
             const userIsAdmin = data?.role === 'admin';
             setIsAdmin(userIsAdmin);
+            setMyRole(data?.role || 'member');
             
             // ✅ [關鍵修改 1]：加入判斷，只有在「初始載入 (isRoleChecking)」時，才執行路由跳轉
             if (isRoleChecking) {
@@ -616,23 +614,30 @@
                     // 2. 從 members 撈取系統控制虛擬同工的狀態
                     const fetchConfig = async () => {
                         try {
-                            const { data, error } = await supabase
+                            const { data: sysMembers, error: e1 } = await supabase
                                 .from('members')
-                                .select('*')
+                                .select('id, name')
                                 .in('name', ['SYSTEM_CONFIG', 'SYSTEM_NEXT_BUTTONS']);
-                            
-                            if (!error && data) {
-                                const conf = data.find(m => m.name === 'SYSTEM_CONFIG');
-                                if (conf) {
-                                    const status = conf.availability_status || 'CURRENT';
+                            if (e1 || !sysMembers) throw e1;
+                            const idOf = (n) => (sysMembers.find(m => m.name === n) || {}).id;
+                            const { data: rows, error } = await supabase
+                                .from('member_quarter_settings')
+                                .select('member_id, availability_status')
+                                .eq('quarter', 'SYSTEM')
+                                .in('member_id', sysMembers.map(m => m.id));
+
+                            if (!error && rows) {
+                                const confRow = rows.find(r => r.member_id === idOf('SYSTEM_CONFIG'));
+                                if (confRow) {
+                                    const status = confRow.availability_status || 'CURRENT';
                                     setSystemConfig({
                                         current: status === 'BOTH' || status === 'CURRENT',
                                         next: status === 'BOTH' || status === 'NEXT'
                                     });
                                 }
-                                const btnConf = data.find(m => m.name === 'SYSTEM_NEXT_BUTTONS');
-                                if (btnConf) {
-                                    setNextButtonsConfig(btnConf.availability_status === 'ON');
+                                const btnRow = rows.find(r => r.member_id === idOf('SYSTEM_NEXT_BUTTONS'));
+                                if (btnRow) {
+                                    setNextButtonsConfig(btnRow.availability_status === 'ON');
                                 }
                             }
                         } catch (err) {
@@ -644,6 +649,16 @@
             }, [currentApp, isAdmin]);
 
             // --- 發布控制面板切換邏輯 ---
+            // 寫入系統開關：存在 member_quarter_settings（季度欄位固定填 SYSTEM）
+            const saveSystemSwitch = async (sysName, status) => {
+                const { data: m, error: e1 } = await supabase.from('members').select('id').eq('name', sysName).single();
+                if (e1 || !m) throw (e1 || new Error('找不到 ' + sysName));
+                const { error } = await supabase
+                    .from('member_quarter_settings')
+                    .upsert({ member_id: m.id, quarter: 'SYSTEM', availability_status: status }, { onConflict: 'member_id,quarter' });
+                if (error) throw error;
+            };
+
             const handleToggleSystemConfig = async (target) => {
                 setIsUpdatingConfig(true);
                 const newConfig = { ...systemConfig, [target]: !systemConfig[target] };
@@ -654,17 +669,11 @@
 
                 try {
                     // 1. 更新主發布狀態
-                    await supabase
-                        .from('members')
-                        .update({ availability_status: dbStatus })
-                        .eq('name', 'SYSTEM_CONFIG');
+                    await saveSystemSwitch('SYSTEM_CONFIG', dbStatus);
                     
                     // 2. 防呆連動：如果關閉了「預排班表(next)」，自動將「功能按鈕」也設為關閉
                     if (target === 'next' && newConfig.next === false) {
-                        await supabase
-                            .from('members')
-                            .update({ availability_status: 'OFF' })
-                            .eq('name', 'SYSTEM_NEXT_BUTTONS');
+                        await saveSystemSwitch('SYSTEM_NEXT_BUTTONS', 'OFF');
                         setNextButtonsConfig(false); // 同步更新畫面狀態
                     }
 
@@ -682,10 +691,7 @@
                 const dbStatus = newState ? 'ON' : 'OFF';
 
                 try {
-                    await supabase
-                        .from('members')
-                        .update({ availability_status: dbStatus })
-                        .eq('name', 'SYSTEM_NEXT_BUTTONS');
+                    await saveSystemSwitch('SYSTEM_NEXT_BUTTONS', dbStatus);
                     setNextButtonsConfig(newState);
                 } catch (e) {
                     alert('按鈕擴充功能更新失敗');
@@ -856,7 +862,7 @@
             return (
                 <div className={`flex ${!isAdmin ? 'flex-col' : ''} h-[100dvh] w-full bg-slate-50 overflow-hidden relative`}>
                     {!isAdmin && (
-                        <AppHeader title="個人設定" name={myName || extractAccountFromEmail(session?.user?.email)} account={session?.user?.email} onLogout={handleLogout} />
+                        <AppHeader title="個人設定" name={myName || extractAccountFromEmail(session?.user?.email)} role={myRole} onLogout={handleLogout} />
                     )}
                     {/* 這裡改為 overflow-y-auto 與 custom-scrollbar，確保內容過長時可正常滾動 */}
                     <main className="flex-1 flex flex-col min-h-0 overflow-y-auto custom-scrollbar relative z-10">
