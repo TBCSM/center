@@ -490,7 +490,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                     if (roleErr) throw new Error('權限儲存失敗（' + roleErr.message + '）');
                 }
             }
-            showMessage('success', editingMember ? '更新成功！' : (hasService ? '新增成功！' : '新增成功！（未指派崗位，不會加入排班與統計）')); closeModal(); loadData();
+            showMessage('success', editingMember ? '更新成功！' : (hasService ? '新增成功！' : '新增成功！（尚未指派崗位）')); closeModal(); loadData();
         } catch (err) { showMessage('error', `儲存失敗：${err.message}`); } finally { setIsLoading(false); }
     };
 
