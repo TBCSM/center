@@ -1234,7 +1234,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                                         />
                                         <button
                                             onClick={() => handleTogglePausePosition(pos)}
-                                            title={paused ? 'ㄑ啟用' : '暫停'}
+                                            title={paused ? '啟用' : '暫停'}
                                             className={`p-2 rounded-lg transition-colors ${paused ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-600 hover:bg-amber-50'}`}
                                         >
                                             {paused ? <Play size={16}/> : <Pause size={16}/>}
