@@ -1272,7 +1272,7 @@ const SchedulingAndGovernance = ({ session, goBack, goToMembers, goToInsights, s
                                 <Plus size={16}/> 新增
                             </button>
                         </div>
-                        <p className="text-xs text-slate-400 mt-2">暫停：預排作業時不排入，編輯作業原崗位、人數設定都保留。</p>
+                        <p className="text-xs text-slate-400 mt-2">崗位暫停：預排作業時，不排入；編輯作業時，原崗位、人數設定都保留。</p>
                     </div>
 
                     {/* 儲存按鈕置底 */}
