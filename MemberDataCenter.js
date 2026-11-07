@@ -404,7 +404,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
     };
 
     // ================= 權限設定（user_roles）=================
-    const ROLE_LABELS = { member: '會友', coworker: '同工', admin_staff: '行政', leader: '領袖', pastor: '牧師', admin: '系統管理員' };
+    const ROLE_LABELS = { member: '會友', coworker: '同工', admin_staff: '行政', leader: '領袖', pastor: '牧師', admin: '管理員' };
     const ROLE_ORDER = ['member', 'coworker', 'admin_staff', 'leader', 'pastor', 'admin']; // 網頁上可指定的六種權限
     const HIGH_ROLES = ['leader', 'pastor', 'admin']; // 卡片上用顏色標出來
     // 卡片名字前面的權限圖示：會友＝人、同工＝人＋勾、行政＝開啟的資料夾、領袖＝星星、牧師＝學士帽、系統管理員＝盾牌
@@ -490,7 +490,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                     if (roleErr) throw new Error('權限儲存失敗（' + roleErr.message + '）');
                 }
             }
-            showMessage('success', editingMember ? '更新成功！' : (hasService ? '新增成功！' : '新增成功！（尚未指派崗位）')); closeModal(); loadData();
+            showMessage('success', editingMember ? '更新成功！' : (hasService ? '新增成功！' : '新增成功！（未指派崗位，不會加入排班與統計）')); closeModal(); loadData();
         } catch (err) { showMessage('error', `儲存失敗：${err.message}`); } finally { setIsLoading(false); }
     };
 
@@ -987,7 +987,7 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
                                                     </select>
                                                 ) : (
                                                     <select disabled className="w-full bg-slate-100 border border-slate-200 rounded-lg px-4 py-3 sm:py-2.5 font-normal text-slate-400 cursor-not-allowed">
-                                                        <option>註冊後設定</option>
+                                                        <option>註冊登入後才能指定</option>
                                                     </select>
                                                 )}
                                                 {acct && acct.member_count > 1 && <p className="text-xs text-amber-600 leading-snug">共用帳號（{acct.member_names}），改權限會影響所有人。</p>}
