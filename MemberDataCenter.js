@@ -404,10 +404,10 @@ const MemberDataCenter = ({ session, isAdmin, goBack, goToSchedule, goToInsights
     };
 
     // ================= 權限設定（user_roles）=================
-    const ROLE_LABELS = { member: '會友', coworker: '同工', admin_staff: '行政', leader: '領袖', pastor: '牧師', admin: '管理員' };
+    const ROLE_LABELS = { member: '會友', coworker: '同工', admin_staff: '行政', leader: '領袖', pastor: '牧者', admin: '管理員' };
     const ROLE_ORDER = ['member', 'coworker', 'admin_staff', 'leader', 'pastor', 'admin']; // 網頁上可指定的六種權限
     const HIGH_ROLES = ['leader', 'pastor', 'admin']; // 卡片上用顏色標出來
-    // 卡片名字前面的權限圖示：會友＝人、同工＝人＋勾、行政＝開啟的資料夾、領袖＝星星、牧師＝學士帽、系統管理員＝盾牌
+    // 卡片名字前面的權限圖示：會友＝人、同工＝人＋勾、行政＝開啟的資料夾、領袖＝星星、牧者＝學士帽、管理員＝盾牌
     const ROLE_ICONS = { member: User, coworker: UserCheck, admin_staff: FolderOpen, leader: Star, pastor: GraduationCap, admin: ShieldCheck };
 
     // 這位同工對應的登入帳號（還沒註冊就是 undefined）
