@@ -61,7 +61,7 @@
     <div id="root"></div>
 
     <script>
-        window.onerror = function(msg, , line, col, error) {
+        window.onerror = function(msg, url, line, col, error) {
             const root = document.getElementById('root');
             if(root) {
                 root.innerHTML = `<div style="color:red; background:#fee; padding:20px; margin:20px; border-radius:10px; font-family:sans-serif;"><h3>❌ 應用程式錯誤</h3><p><strong>錯誤訊息:</strong> ${msg}</p><p>請檢查程式碼 import 是否完整。</p></div>`;
@@ -82,8 +82,8 @@
         import { createClient } from '@supabase/supabase-js';
 
         // --- Supabase 初始化設定 ---
-        const SUPABASE_URL = "https://jtjgqrqbewbgxscytkod.supabase.co";
-        const SUPABASE_KEY = "sb_publishable_TcixlGOMSLBSZNoMNOp6Ng_B-N4Tw1K";
+        const SUPABASE_URL = "https://jcepavwocdujoeoqxvsd.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_Tj2n8e3yY1HyvaFzXRyO_w_PWrVFB7E";
         const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
         
         // --- 儲存輔助函式 ---
